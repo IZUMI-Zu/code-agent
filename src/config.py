@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr
     openai_model_name: str = "gpt-4o"
     openai_base_url: Optional[str] = None
+    brave_api_key: Optional[SecretStr] = None
 
     # Workspace Configuration
     workspace_root: Path = Path(".")
