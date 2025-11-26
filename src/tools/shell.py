@@ -1,88 +1,87 @@
 """
 ═══════════════════════════════════════════════════════════════
-Shell 命令执行工具
+Shell Command Execution Tool
 ═══════════════════════════════════════════════════════════════
-安全设计：
-  - 限制超时时间（防止僵尸进程）
-  - 捕获 stderr（提供完整诊断信息）
-  - 明确工作目录（避免路径混淆）
+Security Design:
+  - Timeout limits (prevent zombie processes)
+  - Capture stderr (provide full diagnostic info)
+  - Explicit working directory (avoid path confusion)
 """
 
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Type
+
+from pydantic import BaseModel, Field
+
 from .base import BaseTool
 
+# ═══════════════════════════════════════════════════════════════
+# Shell Execution Tool
+# ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-# Shell 执行工具
-# ═══════════════════════════════════════════════════════════════
+
+class ShellArgs(BaseModel):
+    command: str = Field(..., description="Shell command to execute")
+    cwd: str = Field(".", description="Working directory for execution")
+
 
 class ShellTool(BaseTool):
-    """执行 Shell 命令"""
+    """Execute Shell Command"""
 
-    def __init__(self, timeout: int = 30):
+    def __init__(self, timeout: int = 60):
         super().__init__(
             name="shell",
-            description="在系统 Shell 中执行命令。返回标准输出和标准错误。"
+            description="Execute command in system shell. Returns stdout and stderr.",
         )
         self.timeout = timeout
 
     def _run(self, command: str, cwd: str = ".") -> str:
-        # 验证工作目录
+        # Validate working directory
         work_dir = Path(cwd).resolve()
         if not work_dir.exists():
-            raise FileNotFoundError(f"工作目录不存在: {cwd}")
+            raise FileNotFoundError(f"Working directory not found: {cwd}")
 
-        # 执行命令（统一处理超时和错误）
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=str(work_dir),
-            capture_output=True,
-            text=True,
-            timeout=self.timeout
-        )
+        # Execute command (unified timeout and error handling)
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(work_dir),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Command timed out ({self.timeout}s): {command}")
+        except Exception as e:
+            raise RuntimeError(f"Command execution error: {str(e)}")
 
-        # 构造输出（成功失败都返回完整信息）
+        # Construct output (return full info for both success and failure)
         output_lines = [
-            f"命令: {command}",
-            f"工作目录: {work_dir}",
-            f"返回码: {result.returncode}",
-            ""
+            f"Command: {command}",
+            f"Working Dir: {work_dir}",
+            f"Return Code: {result.returncode}",
+            "",
         ]
 
         if result.stdout:
-            output_lines.extend([
-                "─── 标准输出 ───",
-                result.stdout.strip()
-            ])
+            output_lines.extend(["─── STDOUT ───", result.stdout.strip()])
 
         if result.stderr:
-            output_lines.extend([
-                "─── 标准错误 ───",
-                result.stderr.strip()
-            ])
+            output_lines.extend(["─── STDERR ───", result.stderr.strip()])
 
-        # 失败时抛出异常（让基类捕获）
+        # Raise exception on failure (let base class catch it)
         if result.returncode != 0:
-            raise RuntimeError("\n".join(output_lines))
+            # If stderr exists, prioritize it
+            error_msg = (
+                result.stderr.strip() if result.stderr else result.stdout.strip()
+            )
+            raise RuntimeError(
+                f"Command failed (Code {result.returncode}):\n{error_msg}"
+            )
 
         return "\n".join(output_lines)
 
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "要执行的 Shell 命令"
-                },
-                "cwd": {
-                    "type": "string",
-                    "description": "命令执行的工作目录（默认为当前目录）",
-                    "default": "."
-                }
-            },
-            "required": ["command"]
-        }
+    def get_args_schema(self) -> Type[BaseModel]:
+        return ShellArgs

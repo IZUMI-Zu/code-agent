@@ -1,31 +1,35 @@
 """
 ═══════════════════════════════════════════════════════════════
-工具基类 - 消除特殊情况的抽象
+Tool Base Class - Abstraction to Eliminate Special Cases
 ═══════════════════════════════════════════════════════════════
-设计哲学：
-  - 好品味：所有工具都是统一接口,无需判断类型
-  - 简洁执念：每个工具只做一件事
-  - 实用主义：异常处理内聚,调用者无需关心细节
+Design Philosophy:
+  - Good Taste: All tools share a unified interface, no type checking needed
+  - Simplicity: Each tool does one thing only
+  - Pragmatism: Exception handling is cohesive, callers don't need to worry about details
 """
 
-from abc import ABC, abstractmethod
-from typing import Any
-from langchain_core.tools import StructuredTool
 import time
+from abc import ABC, abstractmethod
+from typing import Any, Type
 
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel
+
+from ..utils.logger import logger
 
 # ═══════════════════════════════════════════════════════════════
-# 工具基类（统一抽象）
+# Tool Base Class (Unified Abstraction)
 # ═══════════════════════════════════════════════════════════════
+
 
 class BaseTool(ABC):
     """
-    工具的最小化抽象
+    Minimalist Tool Abstraction
 
-    好品味体现：
-      - 只有一个公共方法 execute()
-      - 内部处理所有异常,外部永远得到统一结构
-      - 无需子类处理错误,专注业务逻辑
+    Good Taste:
+      - Only one public method execute()
+      - Internal handling of all exceptions, external always gets unified structure
+      - Subclasses don't handle errors, focus on business logic
     """
 
     def __init__(self, name: str, description: str):
@@ -33,23 +37,24 @@ class BaseTool(ABC):
         self.description = description
 
     @abstractmethod
-    def _run(self, **kwargs: Any) -> str:
+    def _run(self, *args: Any, **kwargs: Any) -> str:
         """
-        子类实现的核心逻辑（无需处理异常）
+        Core logic implemented by subclasses (no exception handling needed)
 
         Args:
-            **kwargs: 工具参数
+            *args: Positional arguments
+            **kwargs: Keyword arguments
 
         Returns:
-            执行结果字符串
+            Execution result string
         """
         pass
 
     def execute(self, **kwargs: Any) -> dict[str, Any]:
         """
-        统一执行入口（处理异常+计时）
+        Unified execution entry point (exception handling + timing)
 
-        返回结构（无论成功失败都一致）：
+        Return Structure (Consistent for success/failure):
         {
             "tool_name": str,
             "success": bool,
@@ -58,13 +63,16 @@ class BaseTool(ABC):
         }
         """
         start = time.perf_counter()
+        logger.debug(f"Executing tool: {self.name} with args: {kwargs}")
 
         try:
             output = self._run(**kwargs)
             success = True
+            logger.info(f"Tool {self.name} executed successfully.")
         except Exception as e:
-            output = f"工具执行失败: {str(e)}"
+            output = f"Tool execution failed: {str(e)}"
             success = False
+            logger.error(f"Tool {self.name} failed: {str(e)}")
 
         duration = (time.perf_counter() - start) * 1000
 
@@ -72,28 +80,28 @@ class BaseTool(ABC):
             "tool_name": self.name,
             "success": success,
             "output": output,
-            "duration_ms": round(duration, 2)
+            "duration_ms": round(duration, 2),
         }
 
     def to_langchain_tool(self) -> StructuredTool:
         """
-        转换为 LangChain StructuredTool
+        Convert to LangChain StructuredTool
 
-        好品味体现:
-          - 直接返回 LangChain 的 Tool 对象
-          - 无需手动序列化/反序列化
-          - 类型安全
+        Good Taste:
+          - Directly return LangChain Tool object
+          - No manual serialization/deserialization
+          - Type safe
         """
         return StructuredTool.from_function(
             func=self._run,
             name=self.name,
             description=self.description,
-            args_schema=self._get_parameters()
+            args_schema=self.get_args_schema(),
         )
 
     @abstractmethod
-    def _get_parameters(self) -> dict[str, Any]:
+    def get_args_schema(self) -> Type[BaseModel]:
         """
-        定义工具参数 schema（JSON Schema 格式）
+        Define tool argument schema (Pydantic Model)
         """
         pass

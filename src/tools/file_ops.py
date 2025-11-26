@@ -1,139 +1,200 @@
 """
 ═══════════════════════════════════════════════════════════════
-文件操作工具集
+File Operation Tools
 ═══════════════════════════════════════════════════════════════
-实现原则：
-  - 每个工具只做一件事（读/写/搜索）
-  - 参数验证前置,避免深层嵌套
-  - 错误信息清晰可操作
+Implementation Principles:
+  - Each tool does one thing (read/write/list)
+  - Parameter validation upfront, avoiding deep nesting
+  - Clear and actionable error messages
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Optional, Type
+
+from pydantic import BaseModel, Field
+
 from .base import BaseTool
 
+# ═══════════════════════════════════════════════════════════════
+# File Read Tool
+# ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-# 文件读取工具
-# ═══════════════════════════════════════════════════════════════
+
+class ReadFileArgs(BaseModel):
+    file_path: str = Field(
+        ..., description="Path to the file to read (absolute or relative)"
+    )
+    start_line: Optional[int] = Field(None, description="Start line number (1-based)")
+    end_line: Optional[int] = Field(None, description="End line number (inclusive)")
+
 
 class ReadFileTool(BaseTool):
-    """读取文件内容"""
+    """Read file content"""
 
     def __init__(self):
         super().__init__(
             name="read_file",
-            description="读取指定路径的文件内容。返回文件的完整文本内容。"
+            description="Read content of a file. Supports reading specific line ranges.",
         )
 
-    def _run(self, file_path: str) -> str:
+    def _run(
+        self,
+        file_path: str,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> str:
         path = Path(file_path)
 
-        # 提前验证,避免深层嵌套
+        # Upfront validation
         if not path.exists():
-            raise FileNotFoundError(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
 
         if not path.is_file():
-            raise ValueError(f"路径不是文件: {file_path}")
+            raise ValueError(f"Path is not a file: {file_path}")
 
-        # 核心逻辑（无特殊情况）
-        content = path.read_text(encoding="utf-8")
-        return f"文件内容 ({len(content)} 字符):\n\n{content}"
+        # Read content
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # Try fallback encoding
+            content = path.read_text(encoding="latin-1")
 
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "要读取的文件路径（绝对路径或相对路径）"
-                }
-            },
-            "required": ["file_path"]
-        }
+        lines = content.splitlines()
+        total_lines = len(lines)
+
+        # Handle line range
+        if start_line is not None or end_line is not None:
+            start = (start_line - 1) if start_line else 0
+            end = end_line if end_line else total_lines
+
+            # Boundary check
+            start = max(0, start)
+            end = min(total_lines, end)
+
+            if start >= end:
+                return f"File {file_path} (Range {start_line}-{end_line} is empty)"
+
+            selected_lines = lines[start:end]
+            content = "\n".join(selected_lines)
+            return f"File {file_path} (Lines {start + 1}-{end}/{total_lines}):\n\n{content}"
+
+        return f"File Content ({len(content)} chars):\n\n{content}"
+
+    def get_args_schema(self) -> Type[BaseModel]:
+        return ReadFileArgs
 
 
 # ═══════════════════════════════════════════════════════════════
-# 文件写入工具
+# File Write Tool
 # ═══════════════════════════════════════════════════════════════
+
+
+class WriteFileArgs(BaseModel):
+    file_path: str = Field(..., description="Target file path")
+    content: str = Field(..., description="Content to write")
+
 
 class WriteFileTool(BaseTool):
-    """写入文件内容（覆盖模式）"""
+    """Write file content (Overwrite mode)"""
 
     def __init__(self):
         super().__init__(
             name="write_file",
-            description="将内容写入指定文件。如果文件已存在则覆盖,不存在则创建。"
+            description="Write content to a file. Overwrites if exists, creates if not.",
         )
 
     def _run(self, file_path: str, content: str) -> str:
         path = Path(file_path)
 
-        # 创建父目录（避免写入失败）
+        # Create parent directories
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 核心逻辑
+        # Write file
         path.write_text(content, encoding="utf-8")
-        return f"成功写入 {len(content)} 字符到: {file_path}"
+        return f"Successfully wrote {len(content)} chars to: {file_path}"
 
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "目标文件路径"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "要写入的内容"
-                }
-            },
-            "required": ["file_path", "content"]
-        }
+    def get_args_schema(self) -> Type[BaseModel]:
+        return WriteFileArgs
 
 
 # ═══════════════════════════════════════════════════════════════
-# 文件列表工具
+# File List Tool
 # ═══════════════════════════════════════════════════════════════
+
+
+class ListFilesArgs(BaseModel):
+    directory: str = Field(".", description="Directory path to list")
+    recursive: bool = Field(
+        False, description="Whether to list subdirectories recursively"
+    )
+    limit: int = Field(100, description="Maximum number of files to return")
+
 
 class ListFilesTool(BaseTool):
-    """列出目录下的文件"""
+    """List files in a directory"""
 
     def __init__(self):
         super().__init__(
             name="list_files",
-            description="列出指定目录下的所有文件和子目录。"
+            description="List all files and subdirectories in the specified directory.",
         )
 
-    def _run(self, directory: str = ".") -> str:
+    def _run(
+        self, directory: str = ".", recursive: bool = False, limit: int = 100
+    ) -> str:
         path = Path(directory)
 
-        # 验证
         if not path.exists():
-            raise FileNotFoundError(f"目录不存在: {directory}")
+            raise FileNotFoundError(f"Directory not found: {directory}")
 
         if not path.is_dir():
-            raise ValueError(f"路径不是目录: {directory}")
+            raise ValueError(f"Path is not a directory: {directory}")
 
-        # 核心逻辑（简洁遍历）
-        items = sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name))
+        items = []
 
-        lines = [f"目录: {path.absolute()}\n"]
-        for item in items:
-            prefix = "📁" if item.is_dir() else "📄"
-            lines.append(f"{prefix} {item.name}")
-
-        return "\n".join(lines)
-
-    def _get_parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "directory": {
-                    "type": "string",
-                    "description": "要列出的目录路径（默认为当前目录）",
-                    "default": "."
-                }
-            }
+        # Define ignore patterns
+        ignore_dirs = {
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            "venv",
+            ".idea",
+            ".vscode",
         }
+
+        def scan(p: Path, depth: int = 0):
+            if len(items) >= limit:
+                return
+
+            try:
+                # Sort: directories first, then files
+                entries = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name))
+
+                for entry in entries:
+                    if len(items) >= limit:
+                        break
+
+                    if entry.is_dir():
+                        if entry.name in ignore_dirs:
+                            continue
+                        items.append(f"{'  ' * depth}📁 {entry.name}/")
+                        if recursive:
+                            scan(entry, depth + 1)
+                    else:
+                        items.append(f"{'  ' * depth}📄 {entry.name}")
+            except PermissionError:
+                items.append(f"{'  ' * depth}🚫 {p.name} (Permission Denied)")
+
+        scan(path)
+
+        output = [f"Directory: {path.absolute()}"]
+        output.extend(items)
+
+        if len(items) >= limit:
+            output.append(f"\n... (Truncated, showing first {limit} items)")
+
+        return "\n".join(output)
+
+    def get_args_schema(self) -> Type[BaseModel]:
+        return ListFilesArgs

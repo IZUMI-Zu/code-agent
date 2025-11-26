@@ -1,17 +1,18 @@
 [project]
 name = "code-agent"
 version = "0.1.0"
-description = "A TUI-based code agent powered by LangGraph and Claude"
+description = "A TUI-based code agent powered by LangGraph and OpenAI"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "asyncio>=4.0.0",
     "langchain>=1.0.8",
-    "langchain-anthropic>=1.0.4",
     "langchain-core>=1.0.5",
     "langchain-deepseek>=1.0.1",
+    "langchain-openai>=1.0.3",
     "langgraph>=1.0.3",
     "langsmith>=0.4.43",
+    "pydantic-settings>=2.12.0",
     "rich>=14.2.0",
 ]
 

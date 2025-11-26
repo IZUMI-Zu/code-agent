@@ -1,119 +1,124 @@
 """
 ═══════════════════════════════════════════════════════════════
-TUI 应用主控制器
+TUI Application Main Controller
 ═══════════════════════════════════════════════════════════════
-职责：
-  - 管理用户输入循环
-  - 调用 Agent 执行任务
-  - 渲染执行结果
+Responsibilities:
+  - Manage user input loop
+  - Call Agent to execute tasks
+  - Render execution results
 """
 
 from langchain_core.messages import HumanMessage
 from rich.prompt import Prompt
+
+from ..agent.graph import agent_graph
+from ..utils.logger import logger
 from .components import (
     console,
-    render_welcome,
     render_message,
     render_separator,
-    show_thinking
+    render_welcome,
+    show_thinking,
 )
-from ..agent.graph import agent_graph
-
 
 # ═══════════════════════════════════════════════════════════════
-# TUI 应用类
+# TUI Application Class
 # ═══════════════════════════════════════════════════════════════
+
 
 class TUIApp:
     """
-    TUI 应用的主控制器
+    Main Controller for TUI Application
 
-    好品味体现：
-      - 循环逻辑简洁,无深层嵌套
-      - 状态管理交给 LangGraph,UI 只负责显示
+    Good Taste:
+      - Loop logic is simple, no deep nesting
+      - State management delegated to LangGraph, UI only responsible for display
     """
 
     def __init__(self):
         self.graph = agent_graph
-        self.state = {
-            "messages": [],
-            "current_task": "",
-            "is_finished": False
-        }
+        self.state = {"messages": [], "current_task": "", "is_finished": False}
+        logger.info("TUI Application initialized")
 
     def run(self):
-        """启动应用主循环"""
+        """Start application main loop"""
         render_welcome()
 
         while True:
             try:
-                # 获取用户输入
-                user_input = Prompt.ask("\n[bold cyan]你[/bold cyan]")
+                # Get user input
+                user_input = Prompt.ask("\n[bold cyan]You[/bold cyan]")
 
-                # 退出命令
+                # Exit command
                 if user_input.lower() in ["exit", "quit", "q"]:
-                    console.print("\n[yellow]再见! 👋[/yellow]\n")
+                    console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
+                    logger.info("Application exit requested by user")
                     break
 
-                # 跳过空输入
+                # Skip empty input
                 if not user_input.strip():
                     continue
 
-                # 处理用户请求
+                # Handle user request
                 self._handle_user_input(user_input)
 
                 render_separator()
 
             except KeyboardInterrupt:
-                console.print("\n\n[yellow]已中断[/yellow]\n")
+                console.print("\n\n[yellow]Interrupted[/yellow]\n")
+                logger.warning("Application interrupted by user")
                 break
             except Exception as e:
-                console.print(f"\n[red]错误: {e}[/red]\n")
+                console.print(f"\n[red]Error: {e}[/red]\n")
+                logger.exception("An unexpected error occurred")
 
     def _handle_user_input(self, user_input: str):
-        """处理用户输入（内部方法）"""
-        # 添加用户消息到状态
+        """Handle user input (Internal method)"""
+        logger.info(f"User input: {user_input}")
+
+        # Add user message to state
         user_message = HumanMessage(content=user_input)
         self.state["messages"].append(user_message)
 
-        # 显示用户消息
+        # Display user message
         render_message(user_message)
 
-        # 显示思考指示器
+        # Display thinking indicator
         progress = show_thinking()
 
         try:
-            # 执行 Agent（流式处理）
+            # Execute Agent (Streaming)
             for event in self.graph.stream(self.state):
-                # 更新状态
+                # Update state
                 for node_name, node_output in event.items():
                     if "messages" in node_output:
                         new_messages = node_output["messages"]
 
-                        # 渲染新消息
+                        # Render new messages
                         for msg in new_messages:
-                            # 停止思考指示器（首次输出时）
+                            # Stop thinking indicator (on first output)
                             if progress:
                                 progress.stop()
                                 progress = None
 
                             render_message(msg)
 
-                        # 更新本地状态
+                        # Update local state
                         self.state["messages"].extend(new_messages)
 
         finally:
-            # 确保停止进度条
+            # Ensure progress bar stops
             if progress:
                 progress.stop()
 
 
 # ═══════════════════════════════════════════════════════════════
-# 应用入口
+# Application Entry Point
 # ═══════════════════════════════════════════════════════════════
 
+
 def main():
-    """启动 TUI 应用"""
+    """Start TUI Application"""
     app = TUIApp()
     app.run()
 

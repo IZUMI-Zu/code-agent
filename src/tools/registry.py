@@ -1,33 +1,35 @@
 """
 ═══════════════════════════════════════════════════════════════
-工具注册中心 - 统一管理所有工具
+Tool Registry - Centralized Tool Management
 ═══════════════════════════════════════════════════════════════
-设计哲学：
-  - 单一注册点（消除分散的工具定义）
-  - 延迟初始化（按需加载,节省资源）
-  - 类型安全（避免运行时错误）
+Design Philosophy:
+  - Single Registry Point (Eliminate scattered tool definitions)
+  - Lazy Initialization (Load on demand, save resources)
+  - Type Safety (Avoid runtime errors)
 """
 
 from typing import Dict
 
 from langchain_core.tools import StructuredTool
 
+from ..utils.logger import logger
 from .base import BaseTool
 from .file_ops import ListFilesTool, ReadFileTool, WriteFileTool
+from .planning import SubmitPlanTool
 from .shell import ShellTool
 
 # ═══════════════════════════════════════════════════════════════
-# 工具注册表（单例模式）
+# Tool Registry (Singleton Pattern)
 # ═══════════════════════════════════════════════════════════════
 
 
 class ToolRegistry:
     """
-    全局工具注册中心
+    Global Tool Registry
 
-    好品味体现：
-      - 工具通过名称访问,无需 if/elif 判断类型
-      - 统一初始化逻辑,消除重复代码
+    Good Taste:
+      - Access tools by name, no if/elif type checking
+      - Unified initialization logic, eliminating duplicate code
     """
 
     def __init__(self):
@@ -35,36 +37,45 @@ class ToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self):
-        """注册内置工具集"""
-        default_tools = [ReadFileTool(), WriteFileTool(), ListFilesTool(), ShellTool()]
+        """Register built-in tools"""
+        default_tools = [
+            ReadFileTool(),
+            WriteFileTool(),
+            ListFilesTool(),
+            ShellTool(),
+            SubmitPlanTool(),
+        ]
 
         for tool in default_tools:
             self.register(tool)
 
     def register(self, tool: BaseTool):
-        """注册新工具"""
+        """Register a new tool"""
         self._tools[tool.name] = tool
+        logger.debug(f"Registered tool: {tool.name}")
 
     def get(self, name: str) -> BaseTool:
-        """获取工具（不存在时抛出明确异常）"""
+        """Get tool (Raise explicit exception if not found)"""
         if name not in self._tools:
             available = ", ".join(self._tools.keys())
-            raise KeyError(f"工具 '{name}' 未注册。可用工具: {available}")
+            raise KeyError(
+                f"Tool '{name}' not registered. Available tools: {available}"
+            )
         return self._tools[name]
 
     def list_all(self) -> list[BaseTool]:
-        """列出所有已注册工具"""
+        """List all registered tools"""
         return list(self._tools.values())
 
     def get_all_tools(self) -> list[BaseTool]:
-        """获取所有已注册工具(别名方法)"""
+        """Get all registered tools (Alias)"""
         return self.list_all()
 
     def get_tool_descriptions(self) -> list[StructuredTool]:
         """
-        获取所有工具的描述（供 LLM 使用）
+        Get descriptions of all tools (For LLM use)
 
-        返回格式：
+        Return Format:
         [
             {
                 "name": "read_file",
@@ -78,12 +89,12 @@ class ToolRegistry:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 全局单例
+# Global Singleton
 # ═══════════════════════════════════════════════════════════════
 
 _global_registry = ToolRegistry()
 
 
 def get_registry() -> ToolRegistry:
-    """获取全局工具注册表"""
+    """Get global tool registry"""
     return _global_registry

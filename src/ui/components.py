@@ -1,84 +1,76 @@
 """
 ═══════════════════════════════════════════════════════════════
-TUI 组件库 - 基于 Rich 的界面元素
+TUI Component Library - Rich-based Interface Elements
 ═══════════════════════════════════════════════════════════════
-设计原则：
-  - 组件职责单一（消息/工具/状态各自独立）
-  - 无状态渲染（输入数据 → 输出格式,无副作用）
-  - 视觉清晰（边框/颜色/图标区分不同内容）
+Design Principles:
+  - Single Responsibility (Message/Tool/State independent)
+  - Stateless Rendering (Input Data -> Output Format, No Side Effects)
+  - Visual Clarity (Borders/Colors/Icons distinguish content)
 """
 
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.table import Table
+from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-
+from rich.table import Table
 
 # ═══════════════════════════════════════════════════════════════
-# 全局控制台实例
+# Global Console Instance
 # ═══════════════════════════════════════════════════════════════
 
 console = Console()
 
 
 # ═══════════════════════════════════════════════════════════════
-# 消息渲染器
+# Message Renderer
 # ═══════════════════════════════════════════════════════════════
+
 
 def render_message(message) -> None:
     """
-    渲染单条消息（根据类型自动选择样式）
+    Render a single message (Automatically select style based on type)
 
-    支持类型:
-      - HumanMessage: 用户输入（蓝色边框）
-      - AIMessage: AI 响应（绿色边框）
-      - ToolMessage: 工具结果（黄色边框）
+    Supported Types:
+      - HumanMessage: User Input (Blue Border)
+      - AIMessage: AI Response (Green Border)
+      - ToolMessage: Tool Result (Yellow Border)
     """
-    # 消除类型判断的特殊情况 → 用映射表
+    # Eliminate special cases with a mapping table
     message_styles = {
-        HumanMessage: ("👤 用户", "blue"),
-        AIMessage: ("🤖 助手", "green"),
-        ToolMessage: ("🔧 工具", "yellow")
+        HumanMessage: ("👤 User", "blue"),
+        AIMessage: ("🤖 Assistant", "green"),
+        ToolMessage: ("🔧 Tool", "yellow"),
     }
 
-    # 获取样式（默认灰色）
-    title, color = message_styles.get(
-        type(message),
-        ("📝 消息", "white")
-    )
+    # Get style (default gray)
+    title, color = message_styles.get(type(message), ("📝 Message", "white"))
 
-    # 渲染内容
+    # Render content
     content = message.content if hasattr(message, "content") else str(message)
 
-    # 如果是 AI 消息且包含工具调用,单独显示
+    # If AI message contains tool calls, display separately
     if isinstance(message, AIMessage) and hasattr(message, "tool_calls"):
         tool_calls = message.tool_calls or []
         if tool_calls:
             _render_tool_calls(tool_calls)
-            return  # 工具调用不显示文本内容
+            return  # Tool calls don't show text content
 
-    # 普通消息显示
+    # Normal message display
     if content.strip():
         console.print(
-            Panel(
-                Markdown(content),
-                title=title,
-                border_style=color,
-                padding=(1, 2)
-            )
+            Panel(Markdown(content), title=title, border_style=color, padding=(1, 2))
         )
 
 
 def _render_tool_calls(tool_calls: list) -> None:
-    """渲染工具调用列表（内部辅助函数）"""
-    table = Table(title="🔧 工具调用", border_style="cyan")
-    table.add_column("工具", style="cyan")
-    table.add_column("参数", style="white")
+    """Render tool call list (Internal helper)"""
+    table = Table(title="🔧 Tool Calls", border_style="cyan")
+    table.add_column("Tool", style="cyan")
+    table.add_column("Arguments", style="white")
 
     for call in tool_calls:
-        tool_name = call.get("name", "未知")
+        tool_name = call.get("name", "Unknown")
         args = str(call.get("args", {}))
         table.add_row(tool_name, args)
 
@@ -86,60 +78,57 @@ def _render_tool_calls(tool_calls: list) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 欢迎界面
+# Welcome Screen
 # ═══════════════════════════════════════════════════════════════
 
+
 def render_welcome() -> None:
-    """显示欢迎界面"""
+    """Display welcome screen"""
     welcome_text = """
 # 🚀 TUI Code Agent
 
-一个基于 LangGraph 的智能代码助手
+An Intelligent Code Agent powered by LangGraph
 
-## 可用命令
-- 输入任务描述,Agent 会自动调用工具完成
-- 输入 `exit` 或 `quit` 退出
+## Available Commands
+- Enter task description, Agent will automatically call tools to complete
+- Enter `exit` or `quit` to exit
 
-## 可用工具
-- `read_file` - 读取文件内容
-- `write_file` - 写入文件
-- `list_files` - 列出目录
-- `shell` - 执行 Shell 命令
+## Available Tools
+- `read_file` - Read file content
+- `write_file` - Write file
+- `list_files` - List directory
+- `shell` - Execute Shell command
     """
 
     console.print(
-        Panel(
-            Markdown(welcome_text),
-            border_style="bold magenta",
-            padding=(1, 2)
-        )
+        Panel(Markdown(welcome_text), border_style="bold magenta", padding=(1, 2))
     )
     console.print()
 
 
 # ═══════════════════════════════════════════════════════════════
-# 状态指示器
+# Status Indicator
 # ═══════════════════════════════════════════════════════════════
+
 
 def show_thinking() -> Progress:
     """
-    显示思考中的进度条
+    Display thinking progress bar
 
-    返回 Progress 对象,调用者负责 stop()
+    Returns Progress object, caller is responsible for stop()
     """
     progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[cyan]思考中..."),
-        console=console
+        SpinnerColumn(), TextColumn("[cyan]Thinking..."), console=console
     )
     progress.start()
     return progress
 
 
 # ═══════════════════════════════════════════════════════════════
-# 分隔线
+# Separator
 # ═══════════════════════════════════════════════════════════════
 
+
 def render_separator() -> None:
-    """渲染分隔线"""
+    """Render separator line"""
     console.print("─" * console.width, style="dim")
