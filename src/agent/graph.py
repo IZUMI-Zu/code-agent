@@ -27,6 +27,7 @@ from ..prompts import (
 )
 from ..tools.registry import get_registry
 from ..utils.logger import logger
+from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
 
 # ═══════════════════════════════════════════════════════════════
@@ -64,7 +65,7 @@ def create_worker(name: str, system_prompt: str, tools: list):
 registry = get_registry()
 all_tools = registry.get_all_tools()
 # Convert custom tools to LangChain tools
-lc_tools = [t.to_langchain_tool() for t in all_tools]
+lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
 # 1. Planner Agent
 planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools)
