@@ -32,6 +32,7 @@ from .components import (
     render_tool_execution,
     render_welcome,
     show_thinking,
+    start_tool_spinner,
 )
 
 # ═══════════════════════════════════════════════════════════════
@@ -55,6 +56,7 @@ class TUIApp:
         self.state = {"messages": [], "current_task": "", "is_finished": False}
         self.session = PromptSession()  # Initialize prompt_toolkit session
         self._tool_event_start_times = {}
+        self._active_spinners = {}  # call_id -> Status
         self._tool_event_lock = threading.Lock()
         self._event_stop = threading.Event()
         self._event_thread = threading.Thread(
@@ -262,9 +264,11 @@ class TUIApp:
             if call_id:
                 with self._tool_event_lock:
                     self._tool_event_start_times[call_id] = timestamp
-            render_tool_execution(
-                tool_name, event.get("args"), status="running", worker=worker
-            )
+
+            # Start spinner instead of printing static line
+            spinner = start_tool_spinner(tool_name, event.get("args"))
+            if call_id:
+                self._active_spinners[call_id] = spinner
             return
 
         if event_type == "tool_finished":
@@ -274,11 +278,18 @@ class TUIApp:
             if call_id:
                 with self._tool_event_lock:
                     start_ts = self._tool_event_start_times.pop(call_id, None)
+
+            # Stop spinner
+            if call_id and call_id in self._active_spinners:
+                spinner = self._active_spinners.pop(call_id)
+                spinner.stop()
+
             if duration is None and start_ts is not None:
                 duration = max(0.0, event.get("timestamp", time.time()) - start_ts)
             status = event.get("status", "completed")
             render_tool_execution(
                 tool_name,
+                event.get("args"),  # Pass args to render_tool_execution for preview
                 status=status,
                 duration=duration,
                 error=event.get("error"),
@@ -290,6 +301,10 @@ class TUIApp:
             return
 
         if event_type == "tool_rejected":
+            # Stop spinner if exists (though rejected usually happens before start,
+            # but if we had a pre-check spinner, we'd stop it here)
+            # In current flow, rejection happens before tool_started usually,
+            # but if we change flow, good to be safe.
             render_tool_execution(
                 tool_name, event.get("args"), status="rejected", worker=worker
             )
@@ -308,7 +323,7 @@ class TUIApp:
 
         render_tool_confirmation(tool_name, args, description)
 
-        console.print("[dim]y: Approve | n: Reject | a: Always Allow (Session)[/dim]")
+        console.print("[dim]y: Approve | n: Reject | a: Always Allow (Workspace)[/dim]")
         choice = Prompt.ask(
             "Action",
             choices=["y", "n", "a"],
@@ -321,8 +336,9 @@ class TUIApp:
             console.print(f"\n[green]✅ Approved. Executing {tool_name}...[/green]")
             return {"action": "approve"}
         elif choice == "n":
+            reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
             console.print(f"\n[red]❌ Rejected.[/red]")
-            return {"action": "reject"}
+            return {"action": "reject", "reason": reason}
         elif choice == "a":
             console.print(
                 f"\n[green]✅ Always allowing {tool_name} for this session...[/green]"

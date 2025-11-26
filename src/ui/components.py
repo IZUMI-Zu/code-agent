@@ -15,7 +15,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.status import Status
 from rich.syntax import Syntax
 
 # ═══════════════════════════════════════════════════════════════
@@ -112,27 +112,36 @@ def render_welcome() -> None:
 # ═══════════════════════════════════════════════════════════════
 
 
-def show_thinking(task: str = "Thinking") -> Progress:
+def show_thinking(task: str = "Thinking") -> Status:
     """
-    Display thinking progress bar with task description
+    Display thinking status with a modern spinner.
 
     Args:
         task: Description of current task (default: "Thinking")
 
-    Returns Progress object, caller is responsible for stop()
+    Returns Status object, caller is responsible for stop()
 
     Good Taste:
-      - Single spinner, no nested progress bars
+      - Modern spinner (dots)
       - Clear task description guides user attention
     """
-    progress = Progress(
-        SpinnerColumn(spinner_name="dots12"),
-        TextColumn(f"[bold cyan]{task}..."),
-        console=console,
-        transient=True,  # Auto-clear when stopped
-    )
-    progress.start()
-    return progress
+    status = console.status(f"[bold cyan]{task}...[/bold cyan]", spinner="dots")
+    status.start()
+    return status
+
+
+def start_tool_spinner(tool_name: str, args: Any = None) -> Status:
+    """
+    Start a spinner for tool execution.
+    """
+    args_preview = _format_args_preview(args)
+    label = f"[bold cyan]Running {tool_name}[/bold cyan]"
+    if args_preview:
+        label += f" [dim]{args_preview}[/dim]"
+
+    status = console.status(label, spinner="dots")
+    status.start()
+    return status
 
 
 def render_tool_execution(
@@ -173,8 +182,8 @@ def render_tool_execution(
         parts.append(f"[magenta]{escape(worker)}[/magenta]")
     parts.append(f"[bold]{escape(tool_name)}[/bold]")
 
-    # Add argument preview for running status
-    if status == "running" and args:
+    # Add argument preview for ALL statuses (since running line might be replaced by spinner)
+    if args:
         args_preview = _format_args_preview(args)
         if args_preview:
             parts.append(f"[dim]{args_preview}[/dim]")
@@ -255,15 +264,46 @@ def render_tool_confirmation(
     if description:
         console.print(f"[dim]{description}[/dim]")
 
-    # Format arguments
-    if isinstance(args, dict):
-        try:
-            args_str = json.dumps(args, indent=2)
-            console.print("\n[bold]Arguments:[/bold]")
-            console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
-        except TypeError:
-            console.print(f"\n[bold]Arguments:[/bold] {args}")
+    # Special rendering for write_file to show content beautifully
+    if tool_name == "write_file" and isinstance(args, dict) and "content" in args:
+        file_path = args.get("file_path", "unknown")
+        content = args.get("content", "")
+
+        console.print(f"\n[bold]File:[/bold] [green]{file_path}[/green]")
+
+        # Determine lexer from file extension
+        lexer = "text"
+        if "." in file_path:
+            ext = file_path.split(".")[-1].lower()
+            lexer = ext
+
+        console.print("\n[bold]Content Preview:[/bold]")
+        console.print(
+            Syntax(content, lexer, theme="monokai", line_numbers=True, word_wrap=True)
+        )
+
+        # Show other args if any (excluding file_path and content)
+        other_args = {
+            k: v for k, v in args.items() if k not in ["file_path", "content"]
+        }
+        if other_args:
+            console.print("\n[bold]Other Arguments:[/bold]")
+            try:
+                args_str = json.dumps(other_args, indent=2)
+                console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
+            except TypeError:
+                console.print(f"{other_args}")
+
     else:
-        console.print(f"\n[bold]Arguments:[/bold] {args}")
+        # Format arguments (Default behavior)
+        if isinstance(args, dict):
+            try:
+                args_str = json.dumps(args, indent=2)
+                console.print("\n[bold]Arguments:[/bold]")
+                console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
+            except TypeError:
+                console.print(f"\n[bold]Arguments:[/bold] {args}")
+        else:
+            console.print(f"\n[bold]Arguments:[/bold] {args}")
 
     console.print()

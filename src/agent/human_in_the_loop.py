@@ -221,6 +221,9 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
             return _execute("user_approved")
         elif action == "reject":
             _emit_rejection("user_rejected")
+            reason = decision.get("reason", "")
+            if reason:
+                return f"Tool call {tool_name} rejected by user. Reason: {reason}"
             return f"Tool call {tool_name} rejected by user."
         elif action == "allow_pattern":
             # Add pattern and execute
