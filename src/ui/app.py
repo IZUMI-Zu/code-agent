@@ -297,7 +297,10 @@ class TUIApp:
             )
             preview = event.get("result_preview")
             if status == "completed" and preview:
-                console.print(f"  [dim]{escape(preview)}[/dim]")
+                # Indent each line of the preview for better visual hierarchy
+                lines = preview.split("\n")
+                for line in lines:
+                    console.print(f"  [dim]{escape(line)}[/dim]")
             return
 
         if event_type == "tool_rejected":
@@ -333,7 +336,7 @@ class TUIApp:
         )
 
         if choice == "y":
-            console.print(f"\n[green]✅ Approved. Executing {tool_name}...[/green]")
+            console.print(f"\n[green]✓ Approved. Executing {tool_name}...[/green]")
             return {"action": "approve"}
         elif choice == "n":
             reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
@@ -341,7 +344,7 @@ class TUIApp:
             return {"action": "reject", "reason": reason}
         elif choice == "a":
             console.print(
-                f"\n[green]✅ Always allowing {tool_name} for this session...[/green]"
+                f"\n[green]✓ Always allowing {tool_name} for this session...[/green]"
             )
             return {"action": "allow_pattern", "pattern": tool_name}
 
