@@ -27,6 +27,7 @@ from ..prompts import (
 )
 from ..tools.registry import get_registry
 from ..utils.logger import logger
+from .context import worker_context
 from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
 
@@ -178,24 +179,25 @@ def create_multi_agent_graph():
 
             # Stream worker agent execution
             # Each iteration yields one step: model call, tool call, or tool result
-            for chunk in agent_graph.stream(state, stream_mode="updates"):
-                # chunk structure: {node_name: {messages: [...]}}
-                for node_name, node_output in chunk.items():
-                    logger.debug(f"[{name}/{node_name}] Update received")
+            with worker_context(name):
+                for chunk in agent_graph.stream(state, stream_mode="updates"):
+                    # chunk structure: {node_name: {messages: [...]}}
+                    for node_name, node_output in chunk.items():
+                        logger.debug(f"[{name}/{node_name}] Update received")
 
-                    if "messages" in node_output:
-                        # Extract only NEW messages from this update
-                        full_msgs = node_output["messages"]
-                        new_msgs = full_msgs[num_old_msgs:]
+                        if "messages" in node_output:
+                            # Extract only NEW messages from this update
+                            full_msgs = node_output["messages"]
+                            new_msgs = full_msgs[num_old_msgs:]
 
-                        if new_msgs:
-                            # YIELD update to main graph stream
-                            # This makes the update IMMEDIATELY visible to UI
-                            yield {"messages": new_msgs}
+                            if new_msgs:
+                                # YIELD update to main graph stream
+                                # This makes the update IMMEDIATELY visible to UI
+                                yield {"messages": new_msgs}
 
-                            # Accumulate for final processing
-                            all_new_msgs.extend(new_msgs)
-                            num_old_msgs = len(full_msgs)
+                                # Accumulate for final processing
+                                all_new_msgs.extend(new_msgs)
+                                num_old_msgs = len(full_msgs)
 
             # Final update: Extract Plan if this is Planner
             if name == "Planner":
@@ -210,7 +212,9 @@ def create_multi_agent_graph():
                                         yield {"plan": plan}
                                         logger.info(f"[{name}] Plan extracted")
                                 except Exception as e:
-                                    logger.error(f"[{name}] Plan extraction failed: {e}")
+                                    logger.error(
+                                        f"[{name}] Plan extraction failed: {e}"
+                                    )
 
             logger.info(f"[{name}] Completed with {len(all_new_msgs)} messages")
 

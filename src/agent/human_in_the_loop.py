@@ -1,12 +1,16 @@
 import fnmatch
 import json
+import time
+import uuid
 from typing import Any, Dict, List
 
 from langchain_core.tools import BaseTool
 from langgraph.types import interrupt
 
 from ..config import settings
+from ..utils.event_bus import publish_tool_event
 from ..utils.logger import logger
+from .context import get_current_worker
 
 
 class PatternManager:
@@ -114,21 +118,99 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
         # Extract arguments. LangChain tools usually receive arguments as kwargs
         # or a single dict in args[0] if invoked directly.
         # But when called via agent, it's usually kwargs.
-        tool_args = kwargs
+        base_kwargs = dict(kwargs)
+
+        def _args_preview() -> Dict[str, Any]:
+            if base_kwargs:
+                return {k: v for k, v in base_kwargs.items() if k != "config"}
+            if args:
+                candidate = args[0]
+                if isinstance(candidate, dict):
+                    return candidate
+            return {}
+
+        args_snapshot = _args_preview()
+        worker_name = get_current_worker()
+
+        def _execute(decision_source: str = "auto"):
+            call_id = str(uuid.uuid4())
+            start_ts = time.time()
+            publish_tool_event(
+                {
+                    "event_type": "tool_started",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "args": args_snapshot,
+                    "decision": decision_source,
+                    "worker": worker_name,
+                }
+            )
+
+            call_kwargs = dict(base_kwargs)
+            call_kwargs["config"] = config
+
+            status = "completed"
+            error_message = None
+            result_preview = None
+            try:
+                result = original_func(*args, **call_kwargs)
+                result_preview = str(result)
+                return result
+            except Exception as exc:  # noqa: BLE001
+                status = "failed"
+                error_message = str(exc)
+                raise
+            finally:
+                duration = time.time() - start_ts
+                event_payload = {
+                    "event_type": "tool_finished",
+                    "call_id": call_id,
+                    "tool": tool_name,
+                    "status": status,
+                    "duration": duration,
+                    "args": args_snapshot,
+                    "decision": decision_source,
+                    "worker": worker_name,
+                }
+                if result_preview is not None and status == "completed":
+                    event_payload["result_preview"] = result_preview[:400]
+                if error_message:
+                    event_payload["error"] = error_message[:400]
+                publish_tool_event(event_payload)
+
+        def _emit_rejection(decision_source: str):
+            publish_tool_event(
+                {
+                    "event_type": "tool_rejected",
+                    "tool": tool_name,
+                    "status": "rejected",
+                    "args": args_snapshot,
+                    "decision": decision_source,
+                    "worker": worker_name,
+                }
+            )
 
         # Check if allowed
-        if pattern_manager.is_allowed(tool_name, tool_args):
+        if pattern_manager.is_allowed(tool_name, args_snapshot):
             logger.info(f"Tool {tool_name} allowed by pattern.")
-            kwargs["config"] = config
-            return original_func(*args, **kwargs)
+            return _execute("allow_pattern")
 
         # Interrupt
         logger.info(f"Interrupting tool {tool_name} for confirmation.")
+        publish_tool_event(
+            {
+                "event_type": "tool_confirmation_requested",
+                "tool": tool_name,
+                "args": args_snapshot,
+                "description": tool.description,
+                "worker": worker_name,
+            }
+        )
         decision = interrupt(
             {
                 "type": "tool_confirmation",
                 "tool": tool_name,
-                "args": tool_args,
+                "args": args_snapshot,
                 "description": tool.description,
             }
         )
@@ -136,17 +218,16 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
         # Handle decision
         action = decision.get("action")
         if action == "approve":
-            kwargs["config"] = config
-            return original_func(*args, **kwargs)
+            return _execute("user_approved")
         elif action == "reject":
+            _emit_rejection("user_rejected")
             return f"Tool call {tool_name} rejected by user."
         elif action == "allow_pattern":
             # Add pattern and execute
             pattern = decision.get("pattern")
             if pattern:
                 pattern_manager.add_pattern(pattern)
-            kwargs["config"] = config
-            return original_func(*args, **kwargs)
+            return _execute("session_allow")
         else:
             return f"Unknown decision action: {action}"
 

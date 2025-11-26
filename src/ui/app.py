@@ -8,6 +8,8 @@ Responsibilities:
   - Render execution results
 """
 
+import threading
+import time
 import uuid
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -16,9 +18,11 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style as PromptStyle
+from rich.markup import escape
 from rich.prompt import Prompt
 
 from ..agent.graph import agent_graph
+from ..utils.event_bus import drain_tool_events
 from ..utils.logger import logger
 from .components import (
     console,
@@ -50,6 +54,13 @@ class TUIApp:
         self.config = {"configurable": {"thread_id": self.thread_id}}
         self.state = {"messages": [], "current_task": "", "is_finished": False}
         self.session = PromptSession()  # Initialize prompt_toolkit session
+        self._tool_event_start_times = {}
+        self._tool_event_lock = threading.Lock()
+        self._event_stop = threading.Event()
+        self._event_thread = threading.Thread(
+            target=self._tool_event_consumer, daemon=True
+        )
+        self._event_thread.start()
         logger.info(f"TUI Application initialized with thread_id: {self.thread_id}")
 
     def _create_key_bindings(self):
@@ -73,51 +84,54 @@ class TUIApp:
         render_welcome()
         kb = self._create_key_bindings()
 
-        while True:
-            try:
-                # Get user input using prompt_toolkit for multiline support
-                console.print()  # Add some spacing
-                user_input = self.session.prompt(
-                    HTML("<b><cyan>You</cyan></b>: "),
-                    multiline=True,
-                    key_bindings=kb,
-                    bottom_toolbar=HTML(
-                        " <b>[Enter]</b> to submit | <b>[Alt+Enter]</b> for newline | <b>[Ctrl+D]</b> to exit "
-                    ),
-                )
+        try:
+            while True:
+                try:
+                    # Get user input using prompt_toolkit for multiline support
+                    console.print()  # Add some spacing
+                    user_input = self.session.prompt(
+                        HTML("<b><cyan>You</cyan></b>: "),
+                        multiline=True,
+                        key_bindings=kb,
+                        bottom_toolbar=HTML(
+                            " <b>[Enter]</b> to submit | <b>[Alt+Enter]</b> for newline | <b>[Ctrl+D]</b> to exit "
+                        ),
+                    )
 
-                # Exit command
-                if user_input.lower().strip() in ["exit", "quit", "q"]:
+                    # Exit command
+                    if user_input.lower().strip() in ["exit", "quit", "q"]:
+                        console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
+                        logger.info("Application exit requested by user")
+                        break
+
+                    # Clear screen command
+                    if user_input.lower().strip() == "clear":
+                        console.clear()
+                        render_welcome()
+                        continue
+
+                    # Skip empty input
+                    if not user_input.strip():
+                        continue
+
+                    # Handle user request
+                    self._handle_user_input(user_input)
+
+                    render_separator()
+
+                except KeyboardInterrupt:
+                    # Handle Ctrl+C
                     console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
-                    logger.info("Application exit requested by user")
                     break
-
-                # Clear screen command
-                if user_input.lower().strip() == "clear":
-                    console.clear()
-                    render_welcome()
-                    continue
-
-                # Skip empty input
-                if not user_input.strip():
-                    continue
-
-                # Handle user request
-                self._handle_user_input(user_input)
-
-                render_separator()
-
-            except KeyboardInterrupt:
-                # Handle Ctrl+C
-                console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
-                break
-            except EOFError:
-                # Handle Ctrl+D
-                console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
-                break
-            except Exception as e:
-                console.print(f"\n[red]Error: {e}[/red]\n")
-                logger.exception("An unexpected error occurred")
+                except EOFError:
+                    # Handle Ctrl+D
+                    console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
+                    break
+                except Exception as e:
+                    console.print(f"\n[red]Error: {e}[/red]\n")
+                    logger.exception("An unexpected error occurred")
+        finally:
+            self._shutdown_event_thread()
 
     def _handle_user_input(self, user_input: str):
         """
@@ -137,17 +151,12 @@ class TUIApp:
 
         # Note: User message already displayed by prompt_toolkit, no need to render again
 
-        # Track tool execution
-        tool_call_map = {}  # tool_call_id -> (tool_name, start_time)
-
         # Display thinking indicator
         progress = show_thinking("Analyzing request")
 
         input_payload = {"messages": [user_message]}
 
         try:
-            import time
-
             while True:
                 # Execute Agent with stream_mode="updates" for step-by-step visibility
                 for chunk in self.graph.stream(
@@ -177,60 +186,11 @@ class TUIApp:
                                     if hasattr(msg, "content") and msg.content.strip():
                                         render_message(msg)
 
-                                    # Then display tool calls
-                                    for tool_call in msg.tool_calls:
-                                        tool_call_id = tool_call.get("id")
-                                        tool_name = tool_call.get("name", "Unknown")
-                                        tool_args = tool_call.get("args", {})
-
-                                        # Track start time
-                                        start_time = time.time()
-                                        tool_call_map[tool_call_id] = (
-                                            tool_name,
-                                            start_time,
-                                        )
-
-                                        # Display tool execution start
-                                        render_tool_execution(
-                                            tool_name, tool_args, status="running"
-                                        )
+                                    continue
 
                                 # Tool Message - show completion with timing
                                 elif isinstance(msg, ToolMessage):
-                                    tool_call_id = msg.tool_call_id
-                                    tool_name = "Unknown"
-                                    duration = None
-
-                                    # Lookup tool name and calculate duration
-                                    if tool_call_id in tool_call_map:
-                                        tool_name, start_time = tool_call_map[
-                                            tool_call_id
-                                        ]
-                                        duration = time.time() - start_time
-
-                                    # Determine status
-                                    is_error = (
-                                        "error" in msg.content.lower()
-                                        or "failed" in msg.content.lower()
-                                        or (
-                                            hasattr(msg, "status")
-                                            and msg.status == "error"
-                                        )
-                                    )
-                                    status = "failed" if is_error else "completed"
-
-                                    # Extract error message if present
-                                    error_msg = None
-                                    if is_error:
-                                        error_msg = msg.content[:200]
-
-                                    # Display completion
-                                    render_tool_execution(
-                                        tool_name,
-                                        status=status,
-                                        duration=duration,
-                                        error=error_msg,
-                                    )
+                                    continue
 
                                 # Regular AI message - display
                                 else:
@@ -266,6 +226,79 @@ class TUIApp:
             # Ensure progress bar stops
             if progress:
                 progress.stop()
+
+    def _tool_event_consumer(self):
+        while True:
+            events = drain_tool_events()
+            if not events:
+                if self._event_stop.is_set():
+                    break
+                time.sleep(0.05)
+                continue
+
+            for event in events:
+                self._process_tool_event(event)
+
+            try:
+                app = getattr(self.session, "app", None)
+                if app is not None:
+                    app.invalidate()
+            except Exception:
+                pass
+
+        # Flush any remaining events before exit
+        remaining = drain_tool_events()
+        for event in remaining:
+            self._process_tool_event(event)
+
+    def _process_tool_event(self, event):
+        event_type = event.get("event_type")
+        tool_name = event.get("tool", "Unknown")
+        worker = event.get("worker")
+
+        if event_type == "tool_started":
+            call_id = event.get("call_id")
+            timestamp = event.get("timestamp", time.time())
+            if call_id:
+                with self._tool_event_lock:
+                    self._tool_event_start_times[call_id] = timestamp
+            render_tool_execution(
+                tool_name, event.get("args"), status="running", worker=worker
+            )
+            return
+
+        if event_type == "tool_finished":
+            call_id = event.get("call_id")
+            duration = event.get("duration")
+            start_ts = None
+            if call_id:
+                with self._tool_event_lock:
+                    start_ts = self._tool_event_start_times.pop(call_id, None)
+            if duration is None and start_ts is not None:
+                duration = max(0.0, event.get("timestamp", time.time()) - start_ts)
+            status = event.get("status", "completed")
+            render_tool_execution(
+                tool_name,
+                status=status,
+                duration=duration,
+                error=event.get("error"),
+                worker=worker,
+            )
+            preview = event.get("result_preview")
+            if status == "completed" and preview:
+                console.print(f"  [dim]{escape(preview)}[/dim]")
+            return
+
+        if event_type == "tool_rejected":
+            render_tool_execution(
+                tool_name, event.get("args"), status="rejected", worker=worker
+            )
+            return
+
+    def _shutdown_event_thread(self):
+        self._event_stop.set()
+        if self._event_thread.is_alive():
+            self._event_thread.join(timeout=1.0)
 
     def _handle_interrupt(self, interrupt_value):
         """Handle tool execution interrupt"""

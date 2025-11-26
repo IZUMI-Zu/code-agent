@@ -9,14 +9,14 @@ Design Principles:
 """
 
 import json
+from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
-from rich.table import Table
 
 # ═══════════════════════════════════════════════════════════════
 # Global Console Instance
@@ -62,7 +62,7 @@ def render_message(message) -> None:
     elif isinstance(message, AIMessage):
         # AI response - markdown formatted
         if content.strip():
-            console.print(f"\n[bold green]Assistant:[/bold green]")
+            console.print("\n[bold green]Assistant:[/bold green]")
             console.print(Markdown(content))
 
     elif isinstance(message, ToolMessage):
@@ -137,10 +137,11 @@ def show_thinking(task: str = "Thinking") -> Progress:
 
 def render_tool_execution(
     tool_name: str,
-    args: dict = None,
+    args: Any = None,
     status: str = "running",
     duration: float = None,
     error: str = None,
+    worker: str = None,
 ) -> None:
     """
     Render tool execution status with enhanced visibility
@@ -161,12 +162,16 @@ def render_tool_execution(
         "running": ("⏳", "cyan"),
         "completed": ("✓", "green"),
         "failed": ("✗", "red"),
+        "rejected": ("!", "yellow"),
     }
 
     icon, color = status_styles.get(status, ("•", "white"))
 
     # Build output line
-    parts = [f"[{color}]{icon}[/{color}]", f"[bold]{tool_name}[/bold]"]
+    parts = [f"[{color}]{icon}[/{color}]"]
+    if worker:
+        parts.append(f"[magenta]{escape(worker)}[/magenta]")
+    parts.append(f"[bold]{escape(tool_name)}[/bold]")
 
     # Add argument preview for running status
     if status == "running" and args:
@@ -182,14 +187,19 @@ def render_tool_execution(
 
     # Show error details if failed
     if status == "failed" and error:
-        # Highlight error in red
-        console.print(f"  [red]Error: {error}[/red]")
+        console.print(f"  [red]Error: {escape(error)}[/red]")
 
 
-def _format_args_preview(args: dict, max_length: int = 60) -> str:
+def _format_args_preview(args: Any, max_length: int = 60) -> str:
     """Format arguments for display preview"""
     if not args:
         return ""
+
+    if isinstance(args, str):
+        preview = args
+        if len(preview) > max_length:
+            preview = preview[: max_length - 3] + "..."
+        return escape(preview)
 
     # Priority keys to show
     main_keys = ["command", "commands", "path", "file_path", "query", "content"]
@@ -199,7 +209,7 @@ def _format_args_preview(args: dict, max_length: int = 60) -> str:
             value = str(args[key])
             if len(value) > max_length:
                 value = value[: max_length - 3] + "..."
-            return f"{key}={value}"
+            return escape(f"{key}={value}")
 
     # Fallback: show first key
     if args:
@@ -207,7 +217,7 @@ def _format_args_preview(args: dict, max_length: int = 60) -> str:
         value = str(args[first_key])
         if len(value) > max_length:
             value = value[: max_length - 3] + "..."
-        return f"{first_key}={value}"
+        return escape(f"{first_key}={value}")
 
     return ""
 
