@@ -148,6 +148,7 @@ dependencies = [
     { name = "prompt-toolkit" },
     { name = "pydantic-settings" },
     { name = "rich" },
+    { name = "tenacity" },
 ]
 
 [package.metadata]
@@ -162,6 +163,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0.52" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "rich", specifier = ">=14.2.0" },
+    { name = "tenacity", specifier = ">=9.0.0" },
 ]
 
 [[package]]

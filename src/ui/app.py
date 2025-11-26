@@ -163,7 +163,7 @@ class TUIApp:
                             progress = None
 
                         # Process messages from this node
-                        if "messages" in node_output:
+                        if isinstance(node_output, dict) and "messages" in node_output:
                             new_messages = node_output["messages"]
 
                             for msg in new_messages:
@@ -212,7 +212,10 @@ class TUIApp:
                                     is_error = (
                                         "error" in msg.content.lower()
                                         or "failed" in msg.content.lower()
-                                        or (hasattr(msg, "status") and msg.status == "error")
+                                        or (
+                                            hasattr(msg, "status")
+                                            and msg.status == "error"
+                                        )
                                     )
                                     status = "failed" if is_error else "completed"
 

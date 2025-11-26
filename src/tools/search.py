@@ -4,7 +4,7 @@ import requests
 from pydantic import BaseModel, Field
 
 from ..config import settings
-from .base import BaseTool
+from .base import BaseTool, RetryableError
 
 
 class SearchInput(BaseModel):
@@ -18,12 +18,19 @@ class BraveSearchTool(BaseTool):
     """
     Tool for searching the web using Brave Search API.
     Useful for finding documentation, examples, and API references.
+
+    Configuration:
+      - timeout: 30 seconds (network requests should be fast)
+      - max_retries: 2 (network errors are retryable)
+      - request_timeout: 10 seconds per HTTP request
     """
 
     def __init__(self):
         super().__init__(
             name="web_search",
             description="Search the web for documentation, code examples, and API references using Brave Search.",
+            timeout=30,  # Total timeout for the tool
+            max_retries=2,  # Retry on network errors
         )
         self.api_key = (
             settings.brave_api_key.get_secret_value()
@@ -31,13 +38,25 @@ class BraveSearchTool(BaseTool):
             else None
         )
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
+        self.request_timeout = 10  # Per-request timeout
 
     def get_args_schema(self) -> Type[BaseModel]:
         return SearchInput
 
     def _run(self, query: str, count: int = 5) -> str:
+        """
+        Execute web search with timeout and retry support
+
+        Design Philosophy:
+          - Network errors raise RetryableError (automatic retry)
+          - Configuration errors fail immediately (no retry)
+          - Timeouts are enforced at HTTP level
+        """
         if not self.api_key:
-            return "Error: Brave Search API key not configured. Please set BRAVE_API_KEY in .env file."
+            # Configuration error - not retryable
+            raise ValueError(
+                "Brave Search API key not configured. Please set BRAVE_API_KEY in .env file."
+            )
 
         headers = {
             "Accept": "application/json",
@@ -51,7 +70,13 @@ class BraveSearchTool(BaseTool):
         }
 
         try:
-            response = requests.get(self.base_url, headers=headers, params=params)
+            # Add timeout to prevent hanging
+            response = requests.get(
+                self.base_url,
+                headers=headers,
+                params=params,
+                timeout=self.request_timeout,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -72,7 +97,22 @@ class BraveSearchTool(BaseTool):
 
             return "\n---\n".join(results)
 
+        except requests.exceptions.Timeout:
+            # Timeout is retryable
+            raise RetryableError(
+                f"Search request timed out after {self.request_timeout}s"
+            )
+        except requests.exceptions.ConnectionError as e:
+            # Network connection errors are retryable
+            raise RetryableError(f"Network connection error: {str(e)}")
         except requests.exceptions.RequestException as e:
-            return f"Error performing search: {str(e)}"
+            # Other request errors (4xx, 5xx) might not be retryable
+            # But let's retry 5xx server errors
+            if hasattr(e, "response") and e.response is not None:
+                if 500 <= e.response.status_code < 600:
+                    raise RetryableError(f"Server error {e.response.status_code}: {str(e)}")
+            # Client errors (4xx) fail immediately
+            raise RuntimeError(f"Search request failed: {str(e)}")
         except Exception as e:
-            return f"Unexpected error: {str(e)}"
+            # Unexpected errors fail immediately
+            raise RuntimeError(f"Unexpected error: {str(e)}")

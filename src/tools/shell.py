@@ -40,6 +40,11 @@ class ShellTool(BaseTool):
       - Provides raw shell access for power users
       - But description guides users to better alternatives
       - Platform info helps Agent make informed choices
+
+    Configuration:
+      - timeout: 60 seconds (commands should complete quickly)
+      - max_retries: 0 (shell timeouts are usually not retryable)
+      - subprocess_timeout: Same as tool timeout (subprocess-level enforcement)
     """
 
     def __init__(self, timeout: int = 60):
@@ -65,8 +70,11 @@ Use shell ONLY for:
 - System queries (which, env)
 
 Returns stdout, stderr, and exit code.""",
+            timeout=timeout,
+            max_retries=0,  # Shell commands shouldn't be retried automatically
         )
-        self.timeout = timeout
+        # Use same timeout for subprocess (first line of defense)
+        self.subprocess_timeout = timeout
 
     def _run(self, command: str, cwd: str = ".") -> str:
         # Validate working directory
@@ -82,10 +90,12 @@ Returns stdout, stderr, and exit code.""",
                 cwd=str(work_dir),
                 capture_output=True,
                 text=True,
-                timeout=self.timeout,
+                timeout=self.subprocess_timeout,
             )
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"Command timed out ({self.timeout}s): {command}")
+            raise RuntimeError(
+                f"Command timed out ({self.subprocess_timeout}s): {command}"
+            )
         except Exception as e:
             raise RuntimeError(f"Command execution error: {str(e)}")
 
