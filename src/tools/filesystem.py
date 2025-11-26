@@ -3,23 +3,22 @@
 Filesystem Tools - Cross-Platform Abstraction
 ═══════════════════════════════════════════════════════════════
 Design Philosophy:
-  - Good Taste: Hide platform differences, provide unified interface
-  - Simplicity: Each tool does ONE thing (create dir, copy file, etc.)
-  - Pragmatism: Use Python stdlib, no external dependencies needed
+    - Good Taste: Hide platform differences, provide unified interface
+    - Simplicity: Each tool does ONE thing (create dir, copy file, etc.)
+    - Pragmatism: Use Python stdlib, no external dependencies needed
 
 Good Code vs Bad Code:
-  ❌ Bad: Expose 'mkdir -p' vs 'mkdir' difference to Agent
-  ✅ Good: Provide create_directory() that works everywhere
+    ❌ Bad: Expose 'mkdir -p' vs 'mkdir' difference to Agent
+    ✅ Good: Provide create_directory() that works everywhere
 """
 
-import os
 import shutil
-from pathlib import Path
 from typing import Type
 
 from pydantic import BaseModel, Field
 
 from .base import BaseTool
+from ..utils.path import resolve_workspace_path
 
 # ═══════════════════════════════════════════════════════════════
 # Directory Operations
@@ -50,7 +49,7 @@ class CreateDirectoryTool(BaseTool):
         )
 
     def _run(self, path: str, recursive: bool = True) -> str:
-        target = Path(path).resolve()
+        target = resolve_workspace_path(path)
 
         # Check if already exists
         if target.exists():
@@ -95,8 +94,8 @@ class CopyFileTool(BaseTool):
         )
 
     def _run(self, source: str, destination: str) -> str:
-        src = Path(source).resolve()
-        dst = Path(destination).resolve()
+        src = resolve_workspace_path(source)
+        dst = resolve_workspace_path(destination)
 
         # Validate source
         if not src.exists():
@@ -107,6 +106,8 @@ class CopyFileTool(BaseTool):
         # If destination is a directory, preserve filename
         if dst.is_dir():
             dst = dst / src.name
+
+        dst.parent.mkdir(parents=True, exist_ok=True)
 
         # Copy
         shutil.copy2(src, dst)
@@ -139,11 +140,13 @@ class MoveFileTool(BaseTool):
         )
 
     def _run(self, source: str, destination: str) -> str:
-        src = Path(source).resolve()
-        dst = Path(destination).resolve()
+        src = resolve_workspace_path(source)
+        dst = resolve_workspace_path(destination)
 
         if not src.exists():
             raise FileNotFoundError(f"Source not found: {src}")
+
+        dst.parent.mkdir(parents=True, exist_ok=True)
 
         # Move
         shutil.move(str(src), str(dst))
@@ -178,7 +181,7 @@ class DeletePathTool(BaseTool):
         )
 
     def _run(self, path: str, recursive: bool = False) -> str:
-        target = Path(path).resolve()
+        target = resolve_workspace_path(path)
 
         if not target.exists():
             raise FileNotFoundError(f"Path not found: {target}")
@@ -231,7 +234,7 @@ class PathExistsTool(BaseTool):
         )
 
     def _run(self, path: str) -> str:
-        target = Path(path).resolve()
+        target = resolve_workspace_path(path)
 
         if not target.exists():
             return f"Path does not exist: {target}"

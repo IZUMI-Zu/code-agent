@@ -15,12 +15,12 @@ Design Philosophy:
 
 import platform
 import subprocess
-from pathlib import Path
 from typing import Type
 
 from pydantic import BaseModel, Field
 
 from .base import BaseTool
+from ..utils.path import resolve_workspace_path
 
 # ═══════════════════════════════════════════════════════════════
 # Shell Execution Tool
@@ -78,7 +78,11 @@ Returns stdout, stderr, and exit code.""",
 
     def _run(self, command: str, cwd: str = ".") -> str:
         # Validate working directory
-        work_dir = Path(cwd).resolve()
+        try:
+            work_dir = resolve_workspace_path(cwd)
+        except ValueError as exc:
+            raise ValueError(str(exc))
+
         if not work_dir.exists():
             raise FileNotFoundError(f"Working directory not found: {cwd}")
 

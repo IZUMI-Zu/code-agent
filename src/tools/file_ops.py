@@ -13,50 +13,8 @@ from typing import Optional, Type
 
 from pydantic import BaseModel, Field
 
-from ..config import settings
 from .base import BaseTool
-
-# ═══════════════════════════════════════════════════════════════
-# Helper Functions
-# ═══════════════════════════════════════════════════════════════
-
-
-def _validate_path(file_path: str) -> Path:
-    """
-    Validate that the path is within the allowed workspace.
-    Returns the absolute path if valid.
-    """
-    # Resolve absolute path
-    # If file_path is absolute, it remains absolute.
-    # If relative, it's relative to CWD, but we want it relative to workspace_root if it's not absolute?
-    # Usually agents work with relative paths. Let's assume relative paths are relative to workspace_root.
-
-    path = Path(file_path)
-
-    if not path.is_absolute():
-        path = settings.workspace_root / path
-
-    resolved_path = path.resolve()
-    workspace_root = settings.workspace_root.resolve()
-
-    # Check if path is within workspace
-    # Use is_relative_to if available (Python 3.9+) or manual check
-    try:
-        if not resolved_path.is_relative_to(workspace_root):
-            raise ValueError(
-                f"Access denied: Path {file_path} is outside the workspace {workspace_root}"
-            )
-    except AttributeError:
-        # Fallback for Python < 3.9
-        try:
-            resolved_path.relative_to(workspace_root)
-        except ValueError:
-            raise ValueError(
-                f"Access denied: Path {file_path} is outside the workspace {workspace_root}"
-            )
-
-    return resolved_path
-
+from ..utils.path import resolve_workspace_path
 
 # ═══════════════════════════════════════════════════════════════
 # File Read Tool
@@ -87,7 +45,7 @@ class ReadFileTool(BaseTool):
         end_line: Optional[int] = None,
     ) -> str:
         try:
-            path = _validate_path(file_path)
+            path = resolve_workspace_path(file_path)
         except ValueError as e:
             return str(e)
 
@@ -151,7 +109,7 @@ class WriteFileTool(BaseTool):
 
     def _run(self, file_path: str, content: str) -> str:
         try:
-            path = _validate_path(file_path)
+            path = resolve_workspace_path(file_path)
         except ValueError as e:
             return str(e)
 
@@ -192,7 +150,7 @@ class ListFilesTool(BaseTool):
         self, directory: str = ".", recursive: bool = False, limit: int = 100
     ) -> str:
         try:
-            path = _validate_path(directory)
+            path = resolve_workspace_path(directory)
         except ValueError as e:
             return str(e)
 
