@@ -10,7 +10,7 @@ Responsibilities:
 
 import uuid
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -25,6 +25,7 @@ from .components import (
     render_message,
     render_separator,
     render_tool_confirmation,
+    render_tool_execution,
     render_welcome,
     show_thinking,
 )
@@ -119,7 +120,14 @@ class TUIApp:
                 logger.exception("An unexpected error occurred")
 
     def _handle_user_input(self, user_input: str):
-        """Handle user input (Internal method)"""
+        """
+        Handle user input (Internal method)
+
+        Design Philosophy:
+          - Make every tool call visible, not just interrupts
+          - Stream execution status in real-time
+          - User should never wonder "what's happening?"
+        """
         logger.info(f"User input: {user_input}")
 
         # Add user message to state
@@ -130,7 +138,7 @@ class TUIApp:
         render_message(user_message)
 
         # Display thinking indicator
-        progress = show_thinking()
+        progress = show_thinking("Analyzing request")
 
         input_payload = {"messages": [user_message]}
 
@@ -149,6 +157,37 @@ class TUIApp:
                                 if progress:
                                     progress.stop()
                                     progress = None
+
+                                # If message contains tool calls, show them
+                                if (
+                                    isinstance(msg, AIMessage)
+                                    and hasattr(msg, "tool_calls")
+                                    and msg.tool_calls
+                                ):
+                                    for tool_call in msg.tool_calls:
+                                        tool_name = tool_call.get("name", "Unknown")
+                                        tool_args = tool_call.get("args", {})
+                                        # Show tool execution start
+                                        render_tool_execution(
+                                            tool_name, tool_args, status="running"
+                                        )
+
+                                # If message is a tool result, show completion
+                                if isinstance(msg, ToolMessage):
+                                    # Extract tool name from tool_call_id or content
+                                    # (LangChain's ToolMessage may not have tool name directly)
+                                    # We'll show a generic completion message
+                                    # Better approach: track tool names from previous AIMessage
+                                    status = (
+                                        "completed"
+                                        if not msg.content.startswith("Tool call")
+                                        else "failed"
+                                    )
+                                    # This is a simplification - ideally we track tool names
+                                    console.print(
+                                        f"  {'✅' if status == 'completed' else '❌'} "
+                                        f"[dim]Tool execution {status}[/dim]"
+                                    )
 
                                 render_message(msg)
 
@@ -173,7 +212,7 @@ class TUIApp:
                         input_payload = Command(resume=decision)
 
                         # Restart thinking
-                        progress = show_thinking()
+                        progress = show_thinking("Executing tool")
                         continue
 
                 break
