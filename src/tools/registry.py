@@ -15,6 +15,13 @@ from langchain_core.tools import StructuredTool
 from ..utils.logger import logger
 from .base import BaseTool
 from .file_ops import ListFilesTool, ReadFileTool, WriteFileTool
+from .filesystem import (
+    CopyFileTool,
+    CreateDirectoryTool,
+    DeletePathTool,
+    MoveFileTool,
+    PathExistsTool,
+)
 from .planning import SubmitPlanTool
 from .search import BraveSearchTool
 from .shell import ShellTool
@@ -38,13 +45,30 @@ class ToolRegistry:
         self._register_default_tools()
 
     def _register_default_tools(self):
-        """Register built-in tools"""
+        """
+        Register built-in tools
+
+        Good Taste:
+          - Cross-platform filesystem tools come first
+          - Shell tool is still available for advanced use
+          - Tools are organized by category
+        """
         default_tools = [
+            # File I/O
             ReadFileTool(),
             WriteFileTool(),
             ListFilesTool(),
+            # Filesystem Operations (Cross-platform)
+            CreateDirectoryTool(),
+            CopyFileTool(),
+            MoveFileTool(),
+            DeletePathTool(),
+            PathExistsTool(),
+            # Shell (Advanced)
             ShellTool(),
+            # Planning
             SubmitPlanTool(),
+            # External
             BraveSearchTool(),
         ]
 

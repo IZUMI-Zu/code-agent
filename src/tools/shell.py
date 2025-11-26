@@ -6,8 +6,14 @@ Security Design:
   - Timeout limits (prevent zombie processes)
   - Capture stderr (provide full diagnostic info)
   - Explicit working directory (avoid path confusion)
+
+Design Philosophy:
+  - Shell is for ADVANCED operations (git, npm, compilers, etc.)
+  - For basic filesystem ops, use dedicated cross-platform tools
+  - Keep raw power available, but warn about alternatives
 """
 
+import platform
 import subprocess
 from pathlib import Path
 from typing import Type
@@ -27,12 +33,38 @@ class ShellArgs(BaseModel):
 
 
 class ShellTool(BaseTool):
-    """Execute Shell Command"""
+    """
+    Execute Shell Command (Advanced)
+
+    Good Taste:
+      - Provides raw shell access for power users
+      - But description guides users to better alternatives
+      - Platform info helps Agent make informed choices
+    """
 
     def __init__(self, timeout: int = 60):
+        # Detect platform
+        system = platform.system()
+        shell_type = "cmd.exe" if system == "Windows" else "bash/zsh"
+
         super().__init__(
             name="shell",
-            description="Execute command in system shell. Returns stdout and stderr.",
+            description=f"""Execute shell command (Current shell: {shell_type} on {system}).
+
+IMPORTANT: For basic filesystem operations, prefer these cross-platform tools:
+- create_directory: Create directories (instead of mkdir)
+- copy_file: Copy files (instead of cp/copy)
+- move_file: Move/rename (instead of mv/move)
+- delete_path: Delete files/dirs (instead of rm/del)
+
+Use shell ONLY for:
+- Version control (git commands)
+- Package managers (npm, pip, cargo)
+- Build tools (make, gcc, cargo build)
+- Process management (ps, kill)
+- System queries (which, env)
+
+Returns stdout, stderr, and exit code.""",
         )
         self.timeout = timeout
 
