@@ -121,12 +121,13 @@ class TUIApp:
 
     def _handle_user_input(self, user_input: str):
         """
-        Handle user input (Internal method)
+        Handle user input with real-time tool execution tracking
 
         Design Philosophy:
-          - Make every tool call visible, not just interrupts
-          - Stream execution status in real-time
-          - User should never wonder "what's happening?"
+          - Stream mode "updates" for fine-grained execution visibility
+          - Track tool execution time for performance awareness
+          - Map tool_call_id -> tool_name for accurate reporting
+          - User sees every step as it happens
         """
         logger.info(f"User input: {user_input}")
 
@@ -134,8 +135,10 @@ class TUIApp:
         user_message = HumanMessage(content=user_input)
         self.state["messages"].append(user_message)
 
-        # Display user message
-        render_message(user_message)
+        # Note: User message already displayed by prompt_toolkit, no need to render again
+
+        # Track tool execution
+        tool_call_map = {}  # tool_call_id -> (tool_name, start_time)
 
         # Display thinking indicator
         progress = show_thinking("Analyzing request")
@@ -143,53 +146,92 @@ class TUIApp:
         input_payload = {"messages": [user_message]}
 
         try:
+            import time
+
             while True:
-                # Execute Agent (Streaming)
-                for event in self.graph.stream(input_payload, config=self.config):
-                    # Update state
-                    for node_name, node_output in event.items():
+                # Execute Agent with stream_mode="updates" for step-by-step visibility
+                for chunk in self.graph.stream(
+                    input_payload, config=self.config, stream_mode="updates"
+                ):
+                    # chunk is dict: {node_name: node_output}
+                    for node_name, node_output in chunk.items():
+                        logger.debug(f"Node {node_name} output: {node_output}")
+
+                        # Stop thinking indicator on first real output
+                        if progress and node_name != "__start__":
+                            progress.stop()
+                            progress = None
+
+                        # Process messages from this node
                         if "messages" in node_output:
                             new_messages = node_output["messages"]
 
-                            # Render new messages
                             for msg in new_messages:
-                                # Stop thinking indicator (on first output)
-                                if progress:
-                                    progress.stop()
-                                    progress = None
-
-                                # If message contains tool calls, show them
+                                # AI Message with tool calls - track and display
                                 if (
                                     isinstance(msg, AIMessage)
                                     and hasattr(msg, "tool_calls")
                                     and msg.tool_calls
                                 ):
+                                    # First, render any reasoning/explanation text
+                                    if hasattr(msg, "content") and msg.content.strip():
+                                        render_message(msg)
+
+                                    # Then display tool calls
                                     for tool_call in msg.tool_calls:
+                                        tool_call_id = tool_call.get("id")
                                         tool_name = tool_call.get("name", "Unknown")
                                         tool_args = tool_call.get("args", {})
-                                        # Show tool execution start
+
+                                        # Track start time
+                                        start_time = time.time()
+                                        tool_call_map[tool_call_id] = (
+                                            tool_name,
+                                            start_time,
+                                        )
+
+                                        # Display tool execution start
                                         render_tool_execution(
                                             tool_name, tool_args, status="running"
                                         )
 
-                                # If message is a tool result, show completion
-                                if isinstance(msg, ToolMessage):
-                                    # Extract tool name from tool_call_id or content
-                                    # (LangChain's ToolMessage may not have tool name directly)
-                                    # We'll show a generic completion message
-                                    # Better approach: track tool names from previous AIMessage
-                                    status = (
-                                        "completed"
-                                        if not msg.content.startswith("Tool call")
-                                        else "failed"
+                                # Tool Message - show completion with timing
+                                elif isinstance(msg, ToolMessage):
+                                    tool_call_id = msg.tool_call_id
+                                    tool_name = "Unknown"
+                                    duration = None
+
+                                    # Lookup tool name and calculate duration
+                                    if tool_call_id in tool_call_map:
+                                        tool_name, start_time = tool_call_map[
+                                            tool_call_id
+                                        ]
+                                        duration = time.time() - start_time
+
+                                    # Determine status
+                                    is_error = (
+                                        "error" in msg.content.lower()
+                                        or "failed" in msg.content.lower()
+                                        or (hasattr(msg, "status") and msg.status == "error")
                                     )
-                                    # This is a simplification - ideally we track tool names
-                                    console.print(
-                                        f"  {'✅' if status == 'completed' else '❌'} "
-                                        f"[dim]Tool execution {status}[/dim]"
+                                    status = "failed" if is_error else "completed"
+
+                                    # Extract error message if present
+                                    error_msg = None
+                                    if is_error:
+                                        error_msg = msg.content[:200]
+
+                                    # Display completion
+                                    render_tool_execution(
+                                        tool_name,
+                                        status=status,
+                                        duration=duration,
+                                        error=error_msg,
                                     )
 
-                                render_message(msg)
+                                # Regular AI message - display
+                                else:
+                                    render_message(msg)
 
                             # Update local state
                             self.state["messages"].extend(new_messages)

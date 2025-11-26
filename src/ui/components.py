@@ -32,72 +32,48 @@ console = Console()
 
 def render_message(message) -> None:
     """
-    Render a single message (Automatically select style based on type)
+    Render a single message
 
     Supported Types:
-      - HumanMessage: User Input (Blue Border)
-      - AIMessage: AI Response (Green Border)
-      - ToolMessage: Tool Result (Yellow Border)
+      - HumanMessage: User Input
+      - AIMessage: AI Response
+      - ToolMessage: Tool Result
 
     Good Taste:
-      - Mapping table eliminates type checking spaghetti
-      - Each message type has consistent visual identity
+      - Clean, minimal design without borders
+      - Clear visual hierarchy through typography
     """
-    # Eliminate special cases with a mapping table
-    message_styles = {
-        HumanMessage: ("👤 You", "bright_blue", "bold blue"),
-        AIMessage: ("🤖 Assistant", "bright_green", "bold green"),
-        ToolMessage: ("🔧 Tool Result", "bright_yellow", "bold yellow"),
-    }
-
-    # Get style (default gray)
-    title, border_color, title_style = message_styles.get(
-        type(message), ("📝 Message", "white", "bold white")
-    )
-
     # Render content
     content = message.content if hasattr(message, "content") else str(message)
 
-    # If AI message contains tool calls, display separately
+    # If AI message contains tool calls, skip rendering here
+    # (tool calls are rendered separately in real-time)
     if isinstance(message, AIMessage) and hasattr(message, "tool_calls"):
         tool_calls = message.tool_calls or []
-        if tool_calls:
-            _render_tool_calls(tool_calls)
-            return  # Tool calls don't show text content
+        if tool_calls and not content.strip():
+            return  # Tool calls already shown in real-time
 
-    # Normal message display
-    if content.strip():
-        console.print(
-            Panel(
-                Markdown(content),
-                title=f"[{title_style}]{title}[/{title_style}]",
-                border_style=border_color,
-                padding=(1, 2),
-            )
-        )
+    # Render based on message type
+    if isinstance(message, HumanMessage):
+        # User message - simple and clean
+        if content.strip():
+            console.print(f"\n[bold cyan]You:[/bold cyan] {content}")
+
+    elif isinstance(message, AIMessage):
+        # AI response - markdown formatted
+        if content.strip():
+            console.print(f"\n[bold green]Assistant:[/bold green]")
+            console.print(Markdown(content))
+
+    elif isinstance(message, ToolMessage):
+        # Tool results are handled in real-time, skip duplicate rendering
+        pass
 
 
 def _render_tool_calls(tool_calls: list) -> None:
-    """Render tool call list (Internal helper)"""
-    table = Table(title="🔧 Tool Calls", border_style="cyan")
-    table.add_column("Tool", style="cyan")
-    table.add_column("Arguments", style="white")
-
-    for call in tool_calls:
-        tool_name = call.get("name", "Unknown")
-        args = call.get("args", {})
-        # Format args nicely if possible
-        if isinstance(args, dict):
-            try:
-                args_str = json.dumps(args, indent=2)
-            except TypeError:
-                args_str = str(args)
-        else:
-            args_str = str(args)
-
-        table.add_row(tool_name, args_str)
-
-    console.print(table)
+    """Render tool call list (Internal helper - now unused, kept for compatibility)"""
+    # Tool calls are now rendered in real-time during execution
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -107,51 +83,28 @@ def _render_tool_calls(tool_calls: list) -> None:
 
 def render_welcome() -> None:
     """
-    Display welcome screen
+    Display welcome screen (Claude Code style)
 
     Design Philosophy:
-      - First impression matters: clean, professional, informative
-      - Guide user without overwhelming them
+      - Clean and minimal
+      - Informative without overwhelming
     """
-    welcome_text = """
-# 🤖 TUI Code Agent
+    console.print("\n[bold bright_cyan]TUI Code Agent[/bold bright_cyan]", style="bold")
+    console.print("[dim]An intelligent multi-agent system powered by LangGraph[/dim]\n")
 
-> *An intelligent multi-agent system powered by LangGraph*
+    console.print("[bold]Quick Start:[/bold]")
+    console.print('  • "Create a Python script to analyze CSV files"')
+    console.print('  • "Find all TODOs in my codebase"')
+    console.print('  • "Explain the main.py file to me"\n')
 
-## 💬 Quick Start
-Just type what you want to do:
-- `"Create a Python script to analyze CSV files"`
-- `"Find all TODOs in my codebase"`
-- `"Explain the main.py file to me"`
-
-## 🎛️  Commands
-- `exit` / `quit` / `q` - Exit application
-- `clear` - Clear screen
-- `[Enter]` - Submit message
-- `[Alt+Enter]` - New line in message
-
-## 🛠️  Available Tools
-- **read_file** - Read file content
-- **write_file** - Create or modify files
-- **list_files** - Browse directory structure
-- **shell** - Execute shell commands
-- **web_search** - Search the web for information
-
----
-*💡 The agent will ask for your approval before executing potentially destructive operations.*
-    """
+    console.print("[bold]Commands:[/bold]")
+    console.print("  • [cyan]exit[/cyan] / [cyan]quit[/cyan] / [cyan]q[/cyan] - Exit")
+    console.print("  • [cyan]clear[/cyan] - Clear screen")
+    console.print("  • [dim][Enter] to submit | [Alt+Enter] for newline[/dim]\n")
 
     console.print(
-        Panel(
-            Markdown(welcome_text),
-            border_style="bold bright_cyan",
-            title="[bold bright_white]╔══ Welcome ══╗[/bold bright_white]",
-            subtitle="[dim italic]v0.2.0 · Enhanced Visibility Edition[/dim italic]",
-            padding=(1, 3),
-            expand=False,
-        )
+        "[dim]💡 The agent will ask for approval before destructive operations.[/dim]\n"
     )
-    console.print()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -182,55 +135,81 @@ def show_thinking(task: str = "Thinking") -> Progress:
     return progress
 
 
-def render_tool_execution(tool_name: str, args: dict, status: str = "running") -> None:
+def render_tool_execution(
+    tool_name: str,
+    args: dict = None,
+    status: str = "running",
+    duration: float = None,
+    error: str = None,
+) -> None:
     """
-    Render tool execution status
+    Render tool execution status with enhanced visibility
 
     Args:
         tool_name: Name of the tool being executed
-        args: Tool arguments
-        status: "running" | "completed" | "failed" | "approved"
+        args: Tool arguments (optional)
+        status: "running" | "completed" | "failed"
+        duration: Execution time in seconds (optional)
+        error: Error message if failed (optional)
 
     Design Philosophy:
-      - Tool execution is a first-class citizen, not hidden
-      - Status colors guide user's emotional response
+      - Real-time visibility into every tool execution
+      - Clear status indication with appropriate colors
+      - Execution time for performance awareness
     """
     status_styles = {
-        "running": ("🔄", "cyan", "Running"),
-        "completed": ("✅", "green", "Completed"),
-        "failed": ("❌", "red", "Failed"),
-        "approved": ("👍", "yellow", "Approved"),
+        "running": ("⏳", "cyan"),
+        "completed": ("✓", "green"),
+        "failed": ("✗", "red"),
     }
 
-    icon, color, status_text = status_styles.get(
-        status, ("🔧", "white", "Unknown")
-    )
+    icon, color = status_styles.get(status, ("•", "white"))
 
-    # Build argument preview (first 100 chars)
-    args_preview = ""
+    # Build output line
+    parts = [f"[{color}]{icon}[/{color}]", f"[bold]{tool_name}[/bold]"]
+
+    # Add argument preview for running status
+    if status == "running" and args:
+        args_preview = _format_args_preview(args)
+        if args_preview:
+            parts.append(f"[dim]{args_preview}[/dim]")
+
+    # Add duration for completed/failed
+    if duration is not None and status in ["completed", "failed"]:
+        parts.append(f"[dim]({duration:.2f}s)[/dim]")
+
+    console.print(" ".join(parts))
+
+    # Show error details if failed
+    if status == "failed" and error:
+        # Highlight error in red
+        console.print(f"  [red]Error: {error}[/red]")
+
+
+def _format_args_preview(args: dict, max_length: int = 60) -> str:
+    """Format arguments for display preview"""
+    if not args:
+        return ""
+
+    # Priority keys to show
+    main_keys = ["command", "commands", "path", "file_path", "query", "content"]
+
+    for key in main_keys:
+        if key in args:
+            value = str(args[key])
+            if len(value) > max_length:
+                value = value[: max_length - 3] + "..."
+            return f"{key}={value}"
+
+    # Fallback: show first key
     if args:
-        if isinstance(args, dict):
-            # Show most important arg
-            main_keys = ["command", "commands", "path", "file_path", "query"]
-            for key in main_keys:
-                if key in args:
-                    args_preview = f"{key}={args[key]}"
-                    break
-            if not args_preview:
-                # Fallback: show first key
-                first_key = next(iter(args))
-                args_preview = f"{first_key}={args[first_key]}"
-        else:
-            args_preview = str(args)
+        first_key = next(iter(args))
+        value = str(args[first_key])
+        if len(value) > max_length:
+            value = value[: max_length - 3] + "..."
+        return f"{first_key}={value}"
 
-    # Truncate if too long
-    if len(args_preview) > 80:
-        args_preview = args_preview[:77] + "..."
-
-    console.print(
-        f"{icon} [bold {color}]{status_text}[/bold {color}] [dim]│[/dim] "
-        f"[bold]{tool_name}[/bold] [dim]{args_preview}[/dim]"
-    )
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -257,33 +236,24 @@ def render_separator() -> None:
 def render_tool_confirmation(
     tool_name: str, args: any, description: str = None
 ) -> None:
-    """Render tool confirmation dialog"""
+    """Render tool confirmation dialog (Claude Code style)"""
+
+    console.print()
+    console.print("[bold yellow]⚠ Confirmation Required[/bold yellow]")
+    console.print(f"[bold]Tool:[/bold] [cyan]{tool_name}[/cyan]")
+
+    if description:
+        console.print(f"[dim]{description}[/dim]")
 
     # Format arguments
     if isinstance(args, dict):
         try:
-            # Try to format as JSON
             args_str = json.dumps(args, indent=2)
-            args_display = Syntax(args_str, "json", theme="monokai", word_wrap=True)
+            console.print("\n[bold]Arguments:[/bold]")
+            console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
         except TypeError:
-            # Fallback to string representation if not JSON serializable
-            args_display = str(args)
+            console.print(f"\n[bold]Arguments:[/bold] {args}")
     else:
-        args_display = str(args)
+        console.print(f"\n[bold]Arguments:[/bold] {args}")
 
-    # Build content
-    console.print()
-    console.print(
-        Panel(
-            f"[bold cyan]Tool:[/bold cyan] {tool_name}\n"
-            + (f"[bold]Description:[/bold] {description}\n" if description else "")
-            + "\n[bold]Arguments:[/bold]",
-            title="[bold yellow]⚠️  Confirmation Required[/bold yellow]",
-            border_style="yellow",
-            padding=(1, 2),
-        )
-    )
-
-    # Print args separately to handle Syntax highlighting or raw text correctly
-    console.print(Panel(args_display, border_style="dim", padding=(1, 2)))
     console.print()
