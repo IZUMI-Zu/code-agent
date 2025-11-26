@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style as PromptStyle
 from rich.prompt import Prompt
 
@@ -23,6 +24,7 @@ from .components import (
     console,
     render_message,
     render_separator,
+    render_tool_confirmation,
     render_welcome,
     show_thinking,
 )
@@ -49,9 +51,26 @@ class TUIApp:
         self.session = PromptSession()  # Initialize prompt_toolkit session
         logger.info(f"TUI Application initialized with thread_id: {self.thread_id}")
 
+    def _create_key_bindings(self):
+        """Create custom key bindings"""
+        kb = KeyBindings()
+
+        @kb.add("enter")
+        def _(event):
+            """Enter to submit"""
+            event.current_buffer.validate_and_handle()
+
+        @kb.add("escape", "enter")
+        def _(event):
+            """Alt+Enter (Esc+Enter) to insert newline"""
+            event.current_buffer.insert_text("\n")
+
+        return kb
+
     def run(self):
         """Start application main loop"""
         render_welcome()
+        kb = self._create_key_bindings()
 
         while True:
             try:
@@ -60,8 +79,9 @@ class TUIApp:
                 user_input = self.session.prompt(
                     HTML("<b><cyan>You</cyan></b>: "),
                     multiline=True,
+                    key_bindings=kb,
                     bottom_toolbar=HTML(
-                        " <b>[Esc] + [Enter]</b> to submit | <b>[Ctrl+D]</b> to exit "
+                        " <b>[Enter]</b> to submit | <b>[Alt+Enter]</b> for newline | <b>[Ctrl+D]</b> to exit "
                     ),
                 )
 
@@ -88,7 +108,8 @@ class TUIApp:
 
             except KeyboardInterrupt:
                 # Handle Ctrl+C
-                continue
+                console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
+                break
             except EOFError:
                 # Handle Ctrl+D
                 console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
@@ -168,11 +189,7 @@ class TUIApp:
         args = interrupt_value.get("args")
         description = interrupt_value.get("description")
 
-        console.print(f"\n[bold yellow]⚠️  Tool Confirmation Required[/bold yellow]")
-        console.print(f"Tool: [cyan]{tool_name}[/cyan]")
-        if description:
-            console.print(f"Description: {description}")
-        console.print(f"Args: {args}")
+        render_tool_confirmation(tool_name, args, description)
 
         console.print("[dim]y: Approve | n: Reject | a: Always Allow (Session)[/dim]")
         choice = Prompt.ask(
@@ -184,10 +201,15 @@ class TUIApp:
         )
 
         if choice == "y":
+            console.print(f"\n[green]✅ Approved. Executing {tool_name}...[/green]")
             return {"action": "approve"}
         elif choice == "n":
+            console.print(f"\n[red]❌ Rejected.[/red]")
             return {"action": "reject"}
         elif choice == "a":
+            console.print(
+                f"\n[green]✅ Always allowing {tool_name} for this session...[/green]"
+            )
             return {"action": "allow_pattern", "pattern": tool_name}
 
 
