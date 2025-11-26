@@ -38,3 +38,6 @@ Thumbs.db
 
 # LangSmith
 .langsmith/
+
+*.log
+logs/

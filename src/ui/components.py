@@ -89,19 +89,30 @@ def render_welcome() -> None:
 
 An Intelligent Code Agent powered by LangGraph
 
-## Available Commands
-- Enter task description, Agent will automatically call tools to complete
-- Enter `exit` or `quit` to exit
+## 🎮 Available Commands
+- Enter task description to start
+- `exit`, `quit`, `q` to exit
+- `clear` to clear screen
 
-## Available Tools
-- `read_file` - Read file content
-- `write_file` - Write file
-- `list_files` - List directory
-- `shell` - Execute Shell command
+## 🛠️  Available Tools
+- 📄 `read_file` - Read file content
+- 📝 `write_file` - Write file
+- 📂 `list_files` - List directory
+- 🐚 `shell` - Execute Shell command
+
+---
+**💡 Tip:** Press `[Esc]` then `[Enter]` to submit multi-line input.
     """
 
     console.print(
-        Panel(Markdown(welcome_text), border_style="bold magenta", padding=(1, 2))
+        Panel(
+            Markdown(welcome_text),
+            border_style="bold cyan",
+            title="[bold white]Welcome[/bold white]",
+            subtitle="[dim]v0.1.0[/dim]",
+            padding=(1, 2),
+            expand=False,
+        )
     )
     console.print()
 

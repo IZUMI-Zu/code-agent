@@ -8,4 +8,5 @@ SUPERVISOR_SYSTEM_PROMPT = (
     " respond with the worker to act next. Each worker will perform a"
     " task and respond with their results and status. When finished,"
     " respond with FINISH."
+    ' You must output a JSON object with the key \'next\', for example: {"next": "Planner"}.'
 )

@@ -12,6 +12,9 @@ import uuid
 
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.styles import Style as PromptStyle
 from rich.prompt import Prompt
 
 from ..agent.graph import agent_graph
@@ -43,6 +46,7 @@ class TUIApp:
         self.thread_id = str(uuid.uuid4())
         self.config = {"configurable": {"thread_id": self.thread_id}}
         self.state = {"messages": [], "current_task": "", "is_finished": False}
+        self.session = PromptSession()  # Initialize prompt_toolkit session
         logger.info(f"TUI Application initialized with thread_id: {self.thread_id}")
 
     def run(self):
@@ -51,14 +55,27 @@ class TUIApp:
 
         while True:
             try:
-                # Get user input
-                user_input = Prompt.ask("\n[bold cyan]You[/bold cyan]")
+                # Get user input using prompt_toolkit for multiline support
+                console.print()  # Add some spacing
+                user_input = self.session.prompt(
+                    HTML("<b><cyan>You</cyan></b>: "),
+                    multiline=True,
+                    bottom_toolbar=HTML(
+                        " <b>[Esc] + [Enter]</b> to submit | <b>[Ctrl+D]</b> to exit "
+                    ),
+                )
 
                 # Exit command
-                if user_input.lower() in ["exit", "quit", "q"]:
+                if user_input.lower().strip() in ["exit", "quit", "q"]:
                     console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
                     logger.info("Application exit requested by user")
                     break
+
+                # Clear screen command
+                if user_input.lower().strip() == "clear":
+                    console.clear()
+                    render_welcome()
+                    continue
 
                 # Skip empty input
                 if not user_input.strip():
@@ -70,8 +87,11 @@ class TUIApp:
                 render_separator()
 
             except KeyboardInterrupt:
-                console.print("\n\n[yellow]Interrupted[/yellow]\n")
-                logger.warning("Application interrupted by user")
+                # Handle Ctrl+C
+                continue
+            except EOFError:
+                # Handle Ctrl+D
+                console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
                 break
             except Exception as e:
                 console.print(f"\n[red]Error: {e}[/red]\n")

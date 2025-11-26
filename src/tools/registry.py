@@ -16,6 +16,7 @@ from ..utils.logger import logger
 from .base import BaseTool
 from .file_ops import ListFilesTool, ReadFileTool, WriteFileTool
 from .planning import SubmitPlanTool
+from .search import BraveSearchTool
 from .shell import ShellTool
 
 # ═══════════════════════════════════════════════════════════════
@@ -44,6 +45,7 @@ class ToolRegistry:
             ListFilesTool(),
             ShellTool(),
             SubmitPlanTool(),
+            BraveSearchTool(),
         ]
 
         for tool in default_tools:
