@@ -12,9 +12,11 @@ Design Philosophy:
   - For basic filesystem ops, use dedicated cross-platform tools
   - Keep raw power available, but warn about alternatives
   - Real-time output streaming (Claude Code style)
+  - Smart error messages with platform-specific command suggestions
 """
 
 import platform
+import re
 import subprocess
 import threading
 import time
@@ -25,6 +27,84 @@ from pydantic import BaseModel, Field
 from ..utils.event_bus import publish_tool_event
 from ..utils.path import resolve_workspace_path
 from .base import BaseTool
+
+# ═══════════════════════════════════════════════════════════════
+# Platform Command Mapping (Linux -> Windows)
+# ═══════════════════════════════════════════════════════════════
+LINUX_TO_WINDOWS_COMMANDS = {
+    "ls": "dir",
+    "ls -la": "dir",
+    "ls -l": "dir",
+    "ls -a": "dir /a",
+    "cat": "type",
+    "rm": "del",
+    "rm -rf": "rmdir /s /q",
+    "rm -r": "rmdir /s /q",
+    "cp": "copy",
+    "cp -r": "xcopy /s /e",
+    "mv": "move",
+    "mkdir -p": "mkdir",
+    "touch": "type nul >",
+    "pwd": "cd",
+    "clear": "cls",
+    "grep": "findstr",
+    "head": "more",
+    "tail": "more",
+    "wc -l": "find /c /v \"\"",
+    "echo -e": "echo",
+}
+
+# ═══════════════════════════════════════════════════════════════
+# Helper Functions
+# ═══════════════════════════════════════════════════════════════
+
+def suggest_windows_command(failed_command: str, error_msg: str) -> str:
+    """
+    Analyze a failed command and suggest Windows equivalent.
+    Returns suggestion string or empty string if no suggestion.
+    """
+    if platform.system() != "Windows":
+        return ""
+    
+    # Check if error indicates command not found
+    not_found_patterns = [
+        "不是内部或外部命令",  # Chinese: not internal or external command
+        "is not recognized",
+        "command not found",
+        "not found",
+    ]
+    
+    is_command_not_found = any(p in error_msg.lower() or p in error_msg for p in not_found_patterns)
+    if not is_command_not_found:
+        return ""
+    
+    # Extract the base command (first word)
+    parts = failed_command.strip().split()
+    if not parts:
+        return ""
+    
+    base_cmd = parts[0]
+    
+    # Check for direct mapping
+    if base_cmd in LINUX_TO_WINDOWS_COMMANDS:
+        win_cmd = LINUX_TO_WINDOWS_COMMANDS[base_cmd]
+        # Try to construct full Windows command
+        if len(parts) > 1:
+            args = " ".join(parts[1:])
+            suggested = f"{win_cmd} {args}"
+        else:
+            suggested = win_cmd
+        return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
+    
+    # Check for compound commands like "ls -la"
+    for linux_cmd, win_cmd in LINUX_TO_WINDOWS_COMMANDS.items():
+        if failed_command.strip().startswith(linux_cmd):
+            rest = failed_command.strip()[len(linux_cmd):].strip()
+            suggested = f"{win_cmd} {rest}".strip()
+            return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
+    
+    return ""
+
 
 # ═══════════════════════════════════════════════════════════════
 # Shell Execution Tool
@@ -245,8 +325,10 @@ Returns stdout, stderr, and exit code.""",
         # Raise exception on failure (let base class catch it)
         if return_code != 0:
             error_msg = stderr_text if stderr_text else stdout_text
+            # Add Windows command suggestion if applicable
+            suggestion = suggest_windows_command(command, error_msg)
             raise RuntimeError(
-                f"Command failed (Code {return_code}):\n{error_msg}"
+                f"Command failed (Code {return_code}):\n{error_msg}{suggestion}"
             )
 
         return "\n".join(output_lines)

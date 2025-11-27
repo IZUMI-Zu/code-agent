@@ -159,7 +159,9 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
             except Exception as exc:  # noqa: BLE001
                 status = "failed"
                 error_message = str(exc)
-                raise
+                # Return error as string instead of raising
+                # This allows the agent to see the error and retry with different approach
+                return f"Error: {error_message}"
             finally:
                 duration = time.time() - start_ts
                 event_payload = {

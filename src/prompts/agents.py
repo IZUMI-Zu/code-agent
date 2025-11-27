@@ -73,6 +73,10 @@ CODE GENERATION PRINCIPLES:
 ERROR HANDLING:
 - If a tool fails, read the error and adapt your approach
 - Don't repeat the same failing operation
+- SHELL COMMAND FAILURES: If a shell command fails due to platform incompatibility:
+  * On Windows: use 'dir' instead of 'ls', 'type' instead of 'cat', 'copy' instead of 'cp'
+  * Retry immediately with the correct platform command
+  * Do NOT give up - always try the alternative command
 """
 
 REVIEWER_PROMPT = """You are a Code Evaluation Agent.
@@ -92,6 +96,13 @@ REVIEW CHECKLIST:
 - Is the code syntactically correct? (use read_file to examine)
 - Does it follow the plan? (compare with the plan in conversation)
 - Can it run without errors? (use shell to test: npm start, python app.py, etc.)
+
+SHELL COMMAND ERROR RECOVERY:
+If a shell command fails, you MUST retry with the correct command:
+- On Windows: use 'dir' instead of 'ls', 'type' instead of 'cat', 'del' instead of 'rm'
+- On Linux/Mac: use 'ls', 'cat', 'rm' as normal
+- ALWAYS check the error message and adapt your command accordingly
+- Do NOT give up after one failure - try the platform-appropriate alternative
 
 OUTPUT FORMAT:
 After reviewing, provide:

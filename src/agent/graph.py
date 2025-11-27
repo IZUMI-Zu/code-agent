@@ -273,7 +273,18 @@ Your job is to VERIFY the implementation:
                                 try:
                                     plan_data = tool_call["args"].get("plan")
                                     if plan_data:
-                                        plan = Plan(**plan_data)
+                                        # Handle different types of plan_data
+                                        if isinstance(plan_data, Plan):
+                                            plan = plan_data
+                                        elif isinstance(plan_data, dict):
+                                            plan = Plan(**plan_data)
+                                        elif isinstance(plan_data, str):
+                                            # Try to parse as JSON
+                                            import json
+                                            plan = Plan(**json.loads(plan_data))
+                                        else:
+                                            logger.error(f"[{name}] Unknown plan_data type: {type(plan_data)}")
+                                            continue
                                         return_state["plan"] = plan
                                         logger.info(f"[{name}] Plan extracted")
                                 except Exception as e:
