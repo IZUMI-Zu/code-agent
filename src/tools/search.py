@@ -1,3 +1,4 @@
+import time
 from typing import Type
 
 import requests
@@ -23,7 +24,12 @@ class BraveSearchTool(BaseTool):
       - timeout: 30 seconds (network requests should be fast)
       - max_retries: 2 (network errors are retryable)
       - request_timeout: 10 seconds per HTTP request
+      - rate_limit: 1 request per second
     """
+
+    # Class-level rate limiting (shared across all instances)
+    _last_request_time: float = 0.0
+    _rate_limit_interval: float = 1.0  # 1 second between requests
 
     def __init__(self):
         super().__init__(
@@ -40,6 +46,15 @@ class BraveSearchTool(BaseTool):
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
         self.request_timeout = 10  # Per-request timeout
 
+    def _wait_for_rate_limit(self):
+        """Enforce rate limiting: wait if needed to ensure 1 request per second."""
+        current_time = time.time()
+        elapsed = current_time - BraveSearchTool._last_request_time
+        if elapsed < self._rate_limit_interval:
+            wait_time = self._rate_limit_interval - elapsed
+            time.sleep(wait_time)
+        BraveSearchTool._last_request_time = time.time()
+
     def get_args_schema(self) -> Type[BaseModel]:
         return SearchInput
 
@@ -51,12 +66,16 @@ class BraveSearchTool(BaseTool):
           - Network errors raise RetryableError (automatic retry)
           - Configuration errors fail immediately (no retry)
           - Timeouts are enforced at HTTP level
+          - Rate limiting: 1 request per second
         """
         if not self.api_key:
             # Configuration error - not retryable
             raise ValueError(
                 "Brave Search API key not configured. Please set BRAVE_API_KEY in .env file."
             )
+
+        # Enforce rate limiting before making request
+        self._wait_for_rate_limit()
 
         headers = {
             "Accept": "application/json",
