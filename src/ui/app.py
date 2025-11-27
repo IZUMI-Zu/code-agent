@@ -151,14 +151,38 @@ class TUIApp:
 
         try:
             while True:
-                # Use stream_mode="messages" for token-level streaming
+                # Use stream_mode=["messages", "updates"] for both token streaming and state updates
                 # subgraphs=True to capture tokens from worker agents (which are subgraphs)
-                for chunk, metadata in self.graph.stream(
+                for event in self.graph.stream(
                     input_payload, 
                     config=self.config, 
-                    stream_mode="messages",
+                    stream_mode=["messages", "updates"],
                     subgraphs=True,
                 ):
+                    # Process any pending tool events first
+                    self._process_pending_events()
+                    # Handle different stream formats
+                    # With multiple stream modes and subgraphs, format is:
+                    # (namespace_tuple, (stream_mode, data))
+                    if not isinstance(event, tuple) or len(event) != 2:
+                        continue
+                    
+                    namespace, inner = event
+                    
+                    # Handle updates mode (state changes)
+                    if isinstance(inner, tuple) and len(inner) == 2:
+                        stream_mode, data = inner
+                        if stream_mode == "updates":
+                            # State update - just continue, tool events handled via event bus
+                            continue
+                        elif stream_mode == "messages":
+                            chunk, metadata = data if isinstance(data, tuple) else (data, {})
+                        else:
+                            continue
+                    else:
+                        continue
+                    
+                    metadata = metadata if isinstance(metadata, dict) else {}
                     node_name = metadata.get("langgraph_node", "")
 
                     # Stop thinking indicator on first output
@@ -176,6 +200,8 @@ class TUIApp:
 
                         # Check if we're starting a new streaming block
                         if streaming_text is None:
+                            # Flush any pending tool events before starting text output
+                            self._flush_tool_events()
                             # Show worker label if available
                             label = worker_labels.get(node_name, "[green]Assistant[/green]")
                             console.print(f"\n[bold]{label}:[/bold]")
@@ -186,6 +212,8 @@ class TUIApp:
                         # If node changed, finish current stream and start new
                         elif current_node != node_name:
                             streaming_text.finish()
+                            # Flush events between different workers
+                            self._flush_tool_events()
                             label = worker_labels.get(node_name, "[green]Assistant[/green]")
                             console.print(f"\n[bold]{label}:[/bold]")
                             streaming_text = StreamingText()
@@ -200,19 +228,29 @@ class TUIApp:
                             streaming_text.finish()
                             streaming_text = None
                             current_node = None
+                            # Resume background event processing after text completes
+                            self._resume_tool_events()
 
                 # Finish streaming if still active
                 if streaming_text:
                     streaming_text.finish()
                     streaming_text = None
+                    self._resume_tool_events()
 
                 # Check for interrupts (tool confirmations)
                 snapshot = self.graph.get_state(self.config)
                 if snapshot.next:
                     tasks = getattr(snapshot, "tasks", [])
                     if tasks and tasks[0].interrupts:
+                        # Stop progress spinner before showing confirmation
+                        if progress:
+                            progress.stop()
+                            progress = None
+                        
+                        # Flush any pending tool events
+                        self._flush_tool_events()
+                        
                         interrupt_value = tasks[0].interrupts[0].value
-
                         decision = self._handle_interrupt(interrupt_value)
                         input_payload = Command(resume=decision)
                         progress = show_thinking("Continuing")
@@ -225,14 +263,17 @@ class TUIApp:
                 progress.stop()
             if streaming_text:
                 streaming_text.finish()
+            # Always ensure event processing is resumed
+            self._resume_tool_events()
 
     def _tool_event_consumer(self):
         """Background thread for tool event processing"""
         while True:
+            if self._event_stop.is_set():
+                break
+                
             events = drain_tool_events()
             if not events:
-                if self._event_stop.is_set():
-                    break
                 time.sleep(0.05)
                 continue
 
@@ -327,6 +368,39 @@ class TUIApp:
                 tool_name, event.get("args"), status="rejected", worker=worker
             )
             return
+
+    def _process_pending_events(self):
+        """Process any pending tool events without blocking."""
+        events = drain_tool_events()
+        for event in events:
+            self._process_tool_event(event)
+
+    def _flush_tool_events(self, timeout: float = 0.3):
+        """
+        Flush all pending tool events in main thread before AI text output.
+        This ensures tool output is displayed before AI text starts streaming.
+        """
+        # Stop any active spinners first
+        for call_id, spinner in list(self._active_spinners.items()):
+            spinner.stop()
+        self._active_spinners.clear()
+        
+        # Process all pending events in main thread
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            events = drain_tool_events()
+            if not events:
+                # Small wait to catch any late-arriving events
+                time.sleep(0.03)
+                events = drain_tool_events()
+                if not events:
+                    break
+            for event in events:
+                self._process_tool_event(event)
+    
+    def _resume_tool_events(self):
+        """Resume background tool event processing (no-op now, kept for compatibility)"""
+        pass
 
     def _shutdown_event_thread(self):
         self._event_stop.set()

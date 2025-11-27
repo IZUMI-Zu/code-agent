@@ -23,7 +23,7 @@ class SubmitPlanTool(BaseTool):
         # In a real scenario, this might save to a database or file
         # Here we just return a success message.
         # The actual state update will be handled by the graph node inspecting the tool call.
-        return f"Plan submitted with {len(plan.tasks)} tasks."
+        return f"Plan submitted successfully with {len(plan.tasks)} tasks. STOP NOW - the Coder agent will implement this plan. Do not submit any more plans."
 
     def get_args_schema(self) -> Type[BaseModel]:
         return SubmitPlanArgs

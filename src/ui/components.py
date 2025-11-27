@@ -409,10 +409,18 @@ def render_tool_confirmation(
         # Format arguments (Default behavior)
         if isinstance(args, dict):
             try:
-                args_str = json.dumps(args, indent=2)
+                args_str = json.dumps(args, indent=2, default=str)
                 console.print("\n[bold]Arguments:[/bold]")
                 console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
-            except TypeError:
+            except (TypeError, ValueError):
+                console.print(f"\n[bold]Arguments:[/bold] {args}")
+        elif hasattr(args, "model_dump"):
+            # Handle Pydantic models
+            try:
+                args_str = json.dumps(args.model_dump(), indent=2, default=str)
+                console.print("\n[bold]Arguments:[/bold]")
+                console.print(Syntax(args_str, "json", theme="monokai", word_wrap=True))
+            except (TypeError, ValueError):
                 console.print(f"\n[bold]Arguments:[/bold] {args}")
         else:
             console.print(f"\n[bold]Arguments:[/bold] {args}")
