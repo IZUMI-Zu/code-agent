@@ -245,7 +245,7 @@ def render_tool_execution(
         "running": ("⏳", "cyan"),
         "completed": ("✓", "green"),
         "failed": ("✗", "red"),
-        "rejected": ("!", "yellow"),
+        "rejected": ("✗", "yellow"),
     }
 
     icon, color = status_styles.get(status, ("•", "white"))
