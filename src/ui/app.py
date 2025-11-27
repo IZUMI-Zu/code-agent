@@ -217,7 +217,9 @@ class TUIApp:
             return
 
         if event_type == "shell_finished":
-            render_shell_finished(event.get("return_code", 0), event.get("status", "completed"))
+            render_shell_finished(
+                event.get("return_code", 0), event.get("status", "completed")
+            )
             return
 
         # Tool started - show spinner
@@ -225,7 +227,9 @@ class TUIApp:
             call_id = event.get("call_id")
             if call_id:
                 with self._tool_event_lock:
-                    self._tool_event_start_times[call_id] = event.get("timestamp", time.time())
+                    self._tool_event_start_times[call_id] = event.get(
+                        "timestamp", time.time()
+                    )
                 spinner = start_tool_spinner(tool_name, event.get("args"))
                 self._active_spinners[call_id] = spinner
             return
@@ -260,12 +264,15 @@ class TUIApp:
             preview = event.get("result_preview")
             if event.get("status") == "completed" and preview:
                 from rich.markup import escape
+
                 for line in preview.split("\n")[:3]:  # Limit to 3 lines
                     console.print(f"  [dim]{escape(line)}[/dim]")
             return
 
         if event_type == "tool_rejected":
-            render_tool_execution(tool_name, event.get("args"), status="rejected", worker=worker)
+            render_tool_execution(
+                tool_name, event.get("args"), status="rejected", worker=worker
+            )
             return
 
     def _stop_all_spinners(self):
@@ -303,14 +310,20 @@ class TUIApp:
         render_tool_confirmation(tool_name, args, description)
 
         console.print("[dim]y: Approve | n: Reject | a: Always Allow[/dim]")
-        choice = Prompt.ask("Action", choices=["y", "n", "a"], default="y", show_choices=False, show_default=False)
+        choice = Prompt.ask(
+            "Action",
+            choices=["y", "n", "a"],
+            default="y",
+            show_choices=False,
+            show_default=False,
+        )
 
         if choice == "y":
             console.print(f"\n[green]✓ Approved[/green]")
             return {"action": "approve"}
         elif choice == "n":
             reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
-            console.print("\n[red]❌ Rejected[/red]")
+            console.print("\n[red]✗ Rejected[/red]")
             return {"action": "reject", "reason": reason}
         else:  # "a"
             console.print(f"\n[green]✓ Always allowing {tool_name}[/green]")

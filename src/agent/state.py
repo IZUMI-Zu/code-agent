@@ -20,11 +20,38 @@ from pydantic import BaseModel, Field
 
 
 class Task(BaseModel):
-    """Single task in the plan"""
+    """
+    Enhanced task model with dependencies and acceptance criteria
+
+    Design Philosophy:
+      - Dependencies ensure execution order (DAG)
+      - Acceptance criteria make verification testable
+      - Phase enables staged project building
+    """
 
     id: int = Field(..., description="Unique task ID")
     description: str = Field(..., description="Task description")
     status: Literal["pending", "in_progress", "completed"] = "pending"
+
+    # ═══════════════════════════════════════════════════════════════
+    # Enhanced fields for better task management
+    # ═══════════════════════════════════════════════════════════════
+    depends_on: List[int] = Field(
+        default_factory=list,
+        description="IDs of prerequisite tasks that must complete first"
+    )
+    priority: int = Field(
+        default=0,
+        description="Task priority (higher = more important, range 1-5)"
+    )
+    acceptance_criteria: str = Field(
+        default="",
+        description="How to verify task completion (testable condition)"
+    )
+    phase: Literal["scaffold", "core", "polish"] = Field(
+        default="core",
+        description="Task phase: scaffold (structure), core (features), polish (refinement)"
+    )
 
 
 class Plan(BaseModel):
@@ -50,6 +77,12 @@ class AgentState(TypedDict):
       - is_finished: Termination flag (simple boolean, no complex enums)
       - plan: Structured project plan (Optional)
       - phase: Current workflow phase (planning, coding, reviewing, done)
+
+    Enhanced for Feedback Loops:
+      - iteration_count: Tracks loop iterations (prevents infinite loops)
+      - max_iterations: Safety limit (based on LangGraph recursion best practices)
+      - review_status: Reviewer's verdict (enables conditional routing)
+      - issues_found: Concrete problems to fix (guides Coder)
     """
 
     # Message stream (LangGraph handles appending logic automatically)
@@ -69,6 +102,15 @@ class AgentState(TypedDict):
 
     # Workflow phase: planning -> coding -> reviewing -> done
     phase: Literal["planning", "coding", "reviewing", "done"]
+
+    # ═══════════════════════════════════════════════════════════════
+    # Feedback Loop Control (LangGraph Best Practice)
+    # ═══════════════════════════════════════════════════════════════
+    iteration_count: int  # Current iteration number (0-indexed)
+    max_iterations: int   # Safety limit to prevent infinite loops (default: 3)
+
+    review_status: Literal["pending", "passed", "needs_fixes"]  # Reviewer's verdict
+    issues_found: List[str]  # Specific issues identified by Reviewer
 
 
 # ═══════════════════════════════════════════════════════════════

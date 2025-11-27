@@ -50,13 +50,14 @@ LINUX_TO_WINDOWS_COMMANDS = {
     "grep": "findstr",
     "head": "more",
     "tail": "more",
-    "wc -l": "find /c /v \"\"",
+    "wc -l": 'find /c /v ""',
     "echo -e": "echo",
 }
 
 # ═══════════════════════════════════════════════════════════════
 # Helper Functions
 # ═══════════════════════════════════════════════════════════════
+
 
 def suggest_windows_command(failed_command: str, error_msg: str) -> str:
     """
@@ -65,7 +66,7 @@ def suggest_windows_command(failed_command: str, error_msg: str) -> str:
     """
     if platform.system() != "Windows":
         return ""
-    
+
     # Check if error indicates command not found
     not_found_patterns = [
         "不是内部或外部命令",  # Chinese: not internal or external command
@@ -73,18 +74,20 @@ def suggest_windows_command(failed_command: str, error_msg: str) -> str:
         "command not found",
         "not found",
     ]
-    
-    is_command_not_found = any(p in error_msg.lower() or p in error_msg for p in not_found_patterns)
+
+    is_command_not_found = any(
+        p in error_msg.lower() or p in error_msg for p in not_found_patterns
+    )
     if not is_command_not_found:
         return ""
-    
+
     # Extract the base command (first word)
     parts = failed_command.strip().split()
     if not parts:
         return ""
-    
+
     base_cmd = parts[0]
-    
+
     # Check for direct mapping
     if base_cmd in LINUX_TO_WINDOWS_COMMANDS:
         win_cmd = LINUX_TO_WINDOWS_COMMANDS[base_cmd]
@@ -95,14 +98,14 @@ def suggest_windows_command(failed_command: str, error_msg: str) -> str:
         else:
             suggested = win_cmd
         return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
-    
+
     # Check for compound commands like "ls -la"
     for linux_cmd, win_cmd in LINUX_TO_WINDOWS_COMMANDS.items():
         if failed_command.strip().startswith(linux_cmd):
-            rest = failed_command.strip()[len(linux_cmd):].strip()
+            rest = failed_command.strip()[len(linux_cmd) :].strip()
             suggested = f"{win_cmd} {rest}".strip()
             return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
-    
+
     return ""
 
 
@@ -199,7 +202,7 @@ Returns stdout, stderr, and exit code.""",
     ) -> str:
         """
         Execute command with real-time output streaming (Claude Code style)
-        
+
         Design Philosophy:
           - User sees output as it happens, not after completion
           - Both stdout and stderr are streamed in real-time
@@ -208,15 +211,17 @@ Returns stdout, stderr, and exit code.""",
         """
         stdout_lines = []
         stderr_lines = []
-        
+
         # Publish shell start event
-        publish_tool_event({
-            "event_type": "shell_started",
-            "command": command,
-            "cwd": str(work_dir),
-            "auto_yes": auto_yes,
-            "timeout": timeout,
-        })
+        publish_tool_event(
+            {
+                "event_type": "shell_started",
+                "command": command,
+                "cwd": str(work_dir),
+                "auto_yes": auto_yes,
+                "timeout": timeout,
+            }
+        )
 
         try:
             # Use Popen for real-time output
@@ -231,7 +236,7 @@ Returns stdout, stderr, and exit code.""",
                 text=True,
                 bufsize=1,  # Line buffered
             )
-            
+
             # If auto_yes, send 'y' and close stdin
             if auto_yes and process.stdin:
                 try:
@@ -249,11 +254,13 @@ Returns stdout, stderr, and exit code.""",
                             line_stripped = line.rstrip("\n\r")
                             lines_list.append(line_stripped)
                             # Publish each line as it comes
-                            publish_tool_event({
-                                "event_type": "shell_output",
-                                "stream": stream_type,
-                                "line": line_stripped,
-                            })
+                            publish_tool_event(
+                                {
+                                    "event_type": "shell_output",
+                                    "stream": stream_type,
+                                    "line": line_stripped,
+                                }
+                            )
                 finally:
                     stream.close()
 
@@ -274,35 +281,39 @@ Returns stdout, stderr, and exit code.""",
                 process.kill()
                 stdout_thread.join(timeout=1)
                 stderr_thread.join(timeout=1)
-                publish_tool_event({
-                    "event_type": "shell_finished",
-                    "command": command,
-                    "status": "timeout",
-                })
-                raise RuntimeError(
-                    f"Command timed out ({timeout}s): {command}"
+                publish_tool_event(
+                    {
+                        "event_type": "shell_finished",
+                        "command": command,
+                        "status": "timeout",
+                    }
                 )
+                raise RuntimeError(f"Command timed out ({timeout}s): {command}")
 
             # Wait for threads to finish reading
             stdout_thread.join(timeout=2)
             stderr_thread.join(timeout=2)
 
             # Publish shell finished event
-            publish_tool_event({
-                "event_type": "shell_finished",
-                "command": command,
-                "return_code": return_code,
-                "status": "completed" if return_code == 0 else "failed",
-            })
+            publish_tool_event(
+                {
+                    "event_type": "shell_finished",
+                    "command": command,
+                    "return_code": return_code,
+                    "status": "completed" if return_code == 0 else "failed",
+                }
+            )
 
         except Exception as e:
             if "timed out" not in str(e):
-                publish_tool_event({
-                    "event_type": "shell_finished",
-                    "command": command,
-                    "status": "error",
-                    "error": str(e),
-                })
+                publish_tool_event(
+                    {
+                        "event_type": "shell_finished",
+                        "command": command,
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
             raise RuntimeError(f"Command execution error: {str(e)}")
 
         # Construct output (return full info for both success and failure)

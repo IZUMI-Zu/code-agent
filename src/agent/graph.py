@@ -17,7 +17,6 @@ Streaming Design (Best Practice):
 from typing import Literal
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -58,9 +57,29 @@ registry = get_registry()
 all_tools = registry.get_all_tools()
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
-# Tools for Planner: ONLY read tools + submit_plan (NO write/create/delete)
-# This ensures Planner only plans, doesn't implement
-PLANNER_ALLOWED_TOOLS = {"read_file", "list_files", "path_exists", "submit_plan", "web_search"}
+# ═══════════════════════════════════════════════════════════════
+# Tools for Planner: Read + Scaffolding + Planning
+# ═══════════════════════════════════════════════════════════════
+# Per LangGraph docs: "Each specialist should have the tools needed to complete their responsibilities"
+# Planner is responsible for:
+#   1. Analyzing project requirements
+#   2. Creating project structure (scaffolding)
+#   3. Generating implementation plan
+# Therefore, it needs scaffolding tools (create_directory, write_file) for config files
+PLANNER_ALLOWED_TOOLS = {
+    # Read tools
+    "read_file",
+    "list_files",
+    "path_exists",
+
+    # Scaffolding tools (NEW: enables project structure creation)
+    "create_directory",  # For directory structure
+    "write_file",        # For config files (package.json, requirements.txt, etc.)
+
+    # Planning tools
+    "submit_plan",
+    "web_search",
+}
 lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
 
 # Tools for Coder: all tools EXCEPT submit_plan
@@ -70,16 +89,13 @@ lc_tools_for_coder = [t for t in lc_tools if t.name != "submit_plan"]
 REVIEWER_ALLOWED_TOOLS = {"read_file", "list_files", "path_exists", "shell", "web_search"}
 lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
 
+# ═══════════════════════════════════════════════════════════════
 # Create worker agents with appropriate tool sets
-# Planner: limit submit_plan to 1 call and stop immediately after
-planner_middleware = [
-    ToolCallLimitMiddleware(
-        tool_name="submit_plan",
-        run_limit=1,
-        exit_behavior="end",  # Stop immediately after submit_plan is called
-    )
-]
-planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=planner_middleware)
+# ═══════════════════════════════════════════════════════════════
+# REMOVED: ToolCallLimitMiddleware (was misused for workflow control)
+# Workflow control is now handled by state + supervisor routing
+# Per LangGraph docs: middleware is for cross-cutting concerns, NOT workflow logic
+planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner)
 coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_for_coder)
 reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer)
 
@@ -98,14 +114,27 @@ class Router(BaseModel):
 
 def supervisor_node(state: AgentState):
     """
-    Supervisor Node: Intelligent routing using hybrid approach
+    Supervisor Node: Intelligent routing with feedback loops
+
+    Based on LangGraph best practices:
+    - Conditional edges for loop creation
+    - State-based termination conditions
+    - Recursion limits for safety
+
+    Reference: https://docs.langchain.com/oss/python/langgraph/use-graph-api
     """
     phase = state.get("phase", "planning")
     plan = state.get("plan")
     messages = state.get("messages", [])
+    iteration_count = state.get("iteration_count", 0)
+    max_iterations = state.get("max_iterations", 3)
+    review_status = state.get("review_status", "pending")
 
-    logger.info(f"Supervisor: Current phase = {phase}, messages count = {len(messages)}")
+    logger.info(f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}")
 
+    # ═══════════════════════════════════════════════════════════════
+    # Helper functions
+    # ═══════════════════════════════════════════════════════════════
     def is_last_message_from_user():
         if not messages:
             return False
@@ -125,38 +154,70 @@ def supervisor_node(state: AgentState):
                 count += 1
         return count
 
-    if messages:
-        last_msg = messages[-1]
-        msg_type = getattr(last_msg, "type", None) or last_msg.__class__.__name__
-        logger.info(f"Supervisor: Last message type = {msg_type}")
+    # ═══════════════════════════════════════════════════════════════
+    # Termination Condition 1: Max iterations reached
+    # ═══════════════════════════════════════════════════════════════
+    if iteration_count >= max_iterations:
+        logger.warning(f"Supervisor: Max iterations ({max_iterations}) reached, forcing FINISH")
+        return {"next": "FINISH", "phase": "done"}
 
-    # New user message -> route to Planner
+    # ═══════════════════════════════════════════════════════════════
+    # New user message → Reset and route to Planner
+    # ═══════════════════════════════════════════════════════════════
     if is_last_message_from_user():
         user_msg_count = count_user_messages()
-        logger.info(f"Supervisor: User message detected (total: {user_msg_count}), routing to Planner")
-        return {"next": "Planner", "phase": "planning", "plan": None}
+        logger.info(f"Supervisor: User message #{user_msg_count} detected, routing to Planner")
+        return {
+            "next": "Planner",
+            "phase": "planning",
+            "plan": None,  # Reset plan
+            "iteration_count": 0,  # Reset iteration counter
+            "review_status": "pending",  # Reset review status
+            "issues_found": [],  # Clear issues
+        }
 
-    # Phase-based routing
+    # ═══════════════════════════════════════════════════════════════
+    # Phase-based routing with feedback loops
+    # ═══════════════════════════════════════════════════════════════
     if phase == "planning":
         if plan is not None:
             logger.info("Supervisor: Plan submitted, moving to coding phase")
             return {"next": "Coder", "phase": "coding"}
         else:
-            logger.info("Supervisor: Planning phase complete without plan, finishing")
+            logger.info("Supervisor: Planning complete without plan, finishing")
             return {"next": "FINISH", "phase": "done"}
 
     elif phase == "coding":
         logger.info("Supervisor: Coding done, moving to review phase")
-        return {"next": "Reviewer", "phase": "reviewing"}
+        return {
+            "next": "Reviewer",
+            "phase": "reviewing",
+            "review_status": "pending",  # Reset review status before review
+        }
 
     elif phase == "reviewing":
-        logger.info("Supervisor: Review done, finishing")
-        return {"next": "FINISH", "phase": "done"}
+        # ═══════════════════════════════════════════════════════════════
+        # CRITICAL: Feedback loop implementation
+        # Check Reviewer's verdict and decide whether to iterate
+        # ═══════════════════════════════════════════════════════════════
+        if review_status == "needs_fixes":
+            logger.info("Supervisor: Review FAILED, routing back to Coder (feedback loop)")
+            return {
+                "next": "Coder",
+                "phase": "coding",
+                "iteration_count": iteration_count + 1,  # Increment iteration
+            }
+        else:
+            # review_status is "passed" or "pending" (assume passed if not explicitly failed)
+            logger.info("Supervisor: Review PASSED, finishing")
+            return {"next": "FINISH", "phase": "done"}
 
     elif phase == "done":
         return {"next": "FINISH"}
 
     else:
+        # Unknown phase, route to Planner as fallback
+        logger.warning(f"Supervisor: Unknown phase '{phase}', routing to Planner")
         return {"next": "Planner", "phase": "planning"}
 
 
@@ -264,7 +325,9 @@ Your job is to VERIFY the implementation:
             # Build return state
             return_state = {"messages": new_messages}
 
+            # ═══════════════════════════════════════════════════════════════
             # Extract Plan if this is Planner
+            # ═══════════════════════════════════════════════════════════════
             if name == "Planner":
                 for msg in new_messages:
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -289,6 +352,39 @@ Your job is to VERIFY the implementation:
                                         logger.info(f"[{name}] Plan extracted")
                                 except Exception as e:
                                     logger.error(f"[{name}] Plan extraction failed: {e}")
+
+            # ═══════════════════════════════════════════════════════════════
+            # Extract review_status if this is Reviewer
+            # ═══════════════════════════════════════════════════════════════
+            if name == "Reviewer":
+                # Parse Reviewer's last message to determine review status
+                review_status = "pending"
+                issues = []
+
+                for msg in reversed(new_messages):
+                    content = msg.content if hasattr(msg, "content") else str(msg)
+                    if not content:
+                        continue
+
+                    # Look for explicit review markers
+                    if "REVIEW: PASSED" in content or "REVIEW:PASSED" in content:
+                        review_status = "passed"
+                        logger.info(f"[{name}] Detected PASSED status")
+                        break
+                    elif "REVIEW: NEEDS_FIXES" in content or "REVIEW:NEEDS_FIXES" in content:
+                        review_status = "needs_fixes"
+                        logger.info(f"[{name}] Detected NEEDS_FIXES status")
+                        # Try to extract issues (look for numbered list)
+                        import re
+                        issue_matches = re.findall(r'^\d+\.\s*(.+)$', content, re.MULTILINE)
+                        if issue_matches:
+                            issues = issue_matches
+                            logger.info(f"[{name}] Extracted {len(issues)} issues")
+                        break
+
+                return_state["review_status"] = review_status
+                if issues:
+                    return_state["issues_found"] = issues
 
             logger.info(f"[{name}] Completed with {len(new_messages)} messages")
             return return_state
