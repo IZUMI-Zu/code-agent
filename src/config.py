@@ -11,6 +11,14 @@ class Settings(BaseSettings):
     openai_base_url: Optional[str] = None
     brave_api_key: Optional[SecretStr] = None
 
+    # ═══════════════════════════════════════════════════════════════
+    # Conversation Memory Management
+    # ═══════════════════════════════════════════════════════════════
+    # Prevents context window overflow by auto-summarizing old messages
+    summarization_model: str = "gpt-4o-mini"      # Model for summarization (cheap)
+    summarization_trigger_tokens: int = 4000      # Trigger when exceeding N tokens
+    summarization_keep_messages: int = 20         # Keep last N messages intact
+
     # Workspace Configuration
     workspace_root: Path = Path(".")
     allowed_patterns_file: str = ".allowed_patterns"

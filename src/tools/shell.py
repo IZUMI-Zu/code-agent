@@ -234,6 +234,8 @@ Returns stdout, stderr, and exit code.""",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",  # Force UTF-8 to handle international characters
+                errors="replace",  # Replace undecodable bytes instead of crashing
                 bufsize=1,  # Line buffered
             )
 

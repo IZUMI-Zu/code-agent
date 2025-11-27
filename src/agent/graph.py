@@ -48,7 +48,9 @@ def get_model():
 def create_worker(name: str, system_prompt: str, tools: list, middleware: list = None):
     """Create a Worker Agent"""
     model = get_model()
-    agent = create_agent(model, tools, system_prompt=system_prompt, middleware=middleware or [])
+    agent = create_agent(
+        model, tools, system_prompt=system_prompt, middleware=middleware or []
+    )
     return agent
 
 
@@ -71,11 +73,9 @@ PLANNER_ALLOWED_TOOLS = {
     "read_file",
     "list_files",
     "path_exists",
-
     # Scaffolding tools (NEW: enables project structure creation)
     "create_directory",  # For directory structure
-    "write_file",        # For config files (package.json, requirements.txt, etc.)
-
+    "write_file",  # For config files (package.json, requirements.txt, etc.)
     # Planning tools
     "submit_plan",
     "web_search",
@@ -86,8 +86,37 @@ lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
 lc_tools_for_coder = [t for t in lc_tools if t.name != "submit_plan"]
 
 # Tools for Reviewer: read tools + shell for testing (NO write/create/delete)
-REVIEWER_ALLOWED_TOOLS = {"read_file", "list_files", "path_exists", "shell", "web_search"}
+REVIEWER_ALLOWED_TOOLS = {
+    "read_file",
+    "list_files",
+    "path_exists",
+    "shell",
+    "web_search",
+}
 lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
+
+# ═══════════════════════════════════════════════════════════════
+# Create Summarization Middleware (prevent context window overflow)
+# ═══════════════════════════════════════════════════════════════
+# Auto-summarize old messages when conversation gets too long
+# Reference: https://docs.langchain.com/oss/python/langchain/middleware/built-in
+from langchain.agents.middleware import SummarizationMiddleware
+
+# Create model instance with same endpoint as main model
+# This ensures summarization uses the same base_url (e.g., custom proxy/API)
+summarization_model = ChatOpenAI(
+    model=settings.summarization_model,
+    temperature=0,
+    timeout=60,
+    base_url=settings.openai_base_url,  # Same endpoint as main model
+    api_key=settings.openai_api_key,
+)
+
+summarization = SummarizationMiddleware(
+    model=summarization_model,  # Pass instance, not string
+    max_tokens_before_summary=settings.summarization_trigger_tokens,
+    messages_to_keep=settings.summarization_keep_messages,
+)
 
 # ═══════════════════════════════════════════════════════════════
 # Create worker agents with appropriate tool sets
@@ -95,9 +124,16 @@ lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS
 # REMOVED: ToolCallLimitMiddleware (was misused for workflow control)
 # Workflow control is now handled by state + supervisor routing
 # Per LangGraph docs: middleware is for cross-cutting concerns, NOT workflow logic
-planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner)
-coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_for_coder)
-reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer)
+# ADDED: SummarizationMiddleware (proper use case - cross-cutting concern)
+planner_agent = create_worker(
+    "Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=[summarization]
+)
+coder_agent = create_worker(
+    "Coder", CODER_PROMPT, lc_tools_for_coder, middleware=[summarization]
+)
+reviewer_agent = create_worker(
+    "Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer, middleware=[summarization]
+)
 
 logger.info(f"Planner tools: {[t.name for t in lc_tools_for_planner]}")
 logger.info(f"Coder tools: {[t.name for t in lc_tools_for_coder]}")
@@ -109,6 +145,7 @@ options = ["FINISH"] + members
 
 class Router(BaseModel):
     """Worker selection router"""
+
     next: Literal["Planner", "Coder", "Reviewer", "FINISH"]
 
 
@@ -127,10 +164,12 @@ def supervisor_node(state: AgentState):
     plan = state.get("plan")
     messages = state.get("messages", [])
     iteration_count = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 3)
+    max_iterations = state.get("max_iterations", 15)
     review_status = state.get("review_status", "pending")
 
-    logger.info(f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}")
+    logger.info(
+        f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}"
+    )
 
     # ═══════════════════════════════════════════════════════════════
     # Helper functions
@@ -155,18 +194,25 @@ def supervisor_node(state: AgentState):
         return count
 
     # ═══════════════════════════════════════════════════════════════
-    # Termination Condition 1: Max iterations reached
+    # Safety Warning: High iteration count (soft limit, not forced termination)
     # ═══════════════════════════════════════════════════════════════
+    # Good Taste: Let the task complete naturally (review_status="passed")
+    # rather than forcing termination. max_iterations is a WARNING, not a HARD LIMIT.
+    # User can always Ctrl+C if truly stuck.
     if iteration_count >= max_iterations:
-        logger.warning(f"Supervisor: Max iterations ({max_iterations}) reached, forcing FINISH")
-        return {"next": "FINISH", "phase": "done"}
+        logger.warning(
+            f"Supervisor: High iteration count ({iteration_count}/{max_iterations}). "
+            f"Continuing but may be stuck in a loop. User can interrupt with Ctrl+C."
+        )
 
     # ═══════════════════════════════════════════════════════════════
     # New user message → Reset and route to Planner
     # ═══════════════════════════════════════════════════════════════
     if is_last_message_from_user():
         user_msg_count = count_user_messages()
-        logger.info(f"Supervisor: User message #{user_msg_count} detected, routing to Planner")
+        logger.info(
+            f"Supervisor: User message #{user_msg_count} detected, routing to Planner"
+        )
         return {
             "next": "Planner",
             "phase": "planning",
@@ -201,7 +247,9 @@ def supervisor_node(state: AgentState):
         # Check Reviewer's verdict and decide whether to iterate
         # ═══════════════════════════════════════════════════════════════
         if review_status == "needs_fixes":
-            logger.info("Supervisor: Review FAILED, routing back to Coder (feedback loop)")
+            logger.info(
+                "Supervisor: Review FAILED, routing back to Coder (feedback loop)"
+            )
             return {
                 "next": "Coder",
                 "phase": "coding",
@@ -252,19 +300,20 @@ def create_multi_agent_graph():
         def worker_node(state: AgentState):
             """
             Regular node: invokes worker and returns final state
-            
+
             Note: Even though we use invoke(), LangChain auto-enables
             streaming when the outer graph uses stream_mode="messages"
             """
             logger.info(f"[{name}] Starting execution...")
-            
+
             from langchain_core.messages import SystemMessage
-            
+
             # Count user messages to determine context
             user_msg_count = sum(
-                1 for msg in state.get("messages", [])
-                if (hasattr(msg, "type") and msg.type == "human") or 
-                   msg.__class__.__name__ == "HumanMessage"
+                1
+                for msg in state.get("messages", [])
+                if (hasattr(msg, "type") and msg.type == "human")
+                or msg.__class__.__name__ == "HumanMessage"
             )
 
             # For Planner: inject context about the conversation state
@@ -277,16 +326,20 @@ Use tools (list_files, read_file) to investigate the current state before planni
 """
                 context_msg = SystemMessage(content=context_text)
                 state = {**state, "messages": [context_msg] + list(state["messages"])}
-                logger.info(f"[{name}] Injected context (user message #{user_msg_count})")
+                logger.info(
+                    f"[{name}] Injected context (user message #{user_msg_count})"
+                )
 
             # For Coder: inject Plan into messages
             if name == "Coder" and state.get("plan"):
                 plan = state["plan"]
-                plan_text = f"## Plan to Implement\n\nSummary: {plan.summary}\n\nTasks:\n"
+                plan_text = (
+                    f"## Plan to Implement\n\nSummary: {plan.summary}\n\nTasks:\n"
+                )
                 for task in plan.tasks:
                     plan_text += f"- Task {task.id}: {task.description}\n"
                 plan_text += "\nImplement these tasks using the available tools. Do NOT create a new plan."
-                
+
                 plan_msg = SystemMessage(content=plan_text)
                 state = {**state, "messages": list(state["messages"]) + [plan_msg]}
                 logger.info(f"[{name}] Injected plan into messages")
@@ -344,14 +397,19 @@ Your job is to VERIFY the implementation:
                                         elif isinstance(plan_data, str):
                                             # Try to parse as JSON
                                             import json
+
                                             plan = Plan(**json.loads(plan_data))
                                         else:
-                                            logger.error(f"[{name}] Unknown plan_data type: {type(plan_data)}")
+                                            logger.error(
+                                                f"[{name}] Unknown plan_data type: {type(plan_data)}"
+                                            )
                                             continue
                                         return_state["plan"] = plan
                                         logger.info(f"[{name}] Plan extracted")
                                 except Exception as e:
-                                    logger.error(f"[{name}] Plan extraction failed: {e}")
+                                    logger.error(
+                                        f"[{name}] Plan extraction failed: {e}"
+                                    )
 
             # ═══════════════════════════════════════════════════════════════
             # Extract review_status if this is Reviewer
@@ -371,12 +429,18 @@ Your job is to VERIFY the implementation:
                         review_status = "passed"
                         logger.info(f"[{name}] Detected PASSED status")
                         break
-                    elif "REVIEW: NEEDS_FIXES" in content or "REVIEW:NEEDS_FIXES" in content:
+                    elif (
+                        "REVIEW: NEEDS_FIXES" in content
+                        or "REVIEW:NEEDS_FIXES" in content
+                    ):
                         review_status = "needs_fixes"
                         logger.info(f"[{name}] Detected NEEDS_FIXES status")
                         # Try to extract issues (look for numbered list)
                         import re
-                        issue_matches = re.findall(r'^\d+\.\s*(.+)$', content, re.MULTILINE)
+
+                        issue_matches = re.findall(
+                            r"^\d+\.\s*(.+)$", content, re.MULTILINE
+                        )
                         if issue_matches:
                             issues = issue_matches
                             logger.info(f"[{name}] Extracted {len(issues)} issues")

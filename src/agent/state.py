@@ -107,7 +107,7 @@ class AgentState(TypedDict):
     # Feedback Loop Control (LangGraph Best Practice)
     # ═══════════════════════════════════════════════════════════════
     iteration_count: int  # Current iteration number (0-indexed)
-    max_iterations: int   # Safety limit to prevent infinite loops (default: 3)
+    max_iterations: int   # Safety limit to prevent infinite loops (default: 15)
 
     review_status: Literal["pending", "passed", "needs_fixes"]  # Reviewer's verdict
     issues_found: List[str]  # Specific issues identified by Reviewer
