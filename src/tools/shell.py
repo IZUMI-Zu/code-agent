@@ -25,7 +25,7 @@ from typing import Type
 from pydantic import BaseModel, Field
 
 from ..utils.event_bus import publish_tool_event
-from ..utils.path import resolve_workspace_path
+from ..utils.path import get_relative_path, resolve_workspace_path
 from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
@@ -319,9 +319,11 @@ Returns stdout, stderr, and exit code.""",
             raise RuntimeError(f"Command execution error: {str(e)}")
 
         # Construct output (return full info for both success and failure)
+        # Use relative path to hide workspace details from agent
+        rel_work_dir = get_relative_path(work_dir)
         output_lines = [
             f"Command: {command}",
-            f"Working Dir: {work_dir}",
+            f"Working Dir: {rel_work_dir or '.'}",
             f"Return Code: {return_code}",
             "",
         ]

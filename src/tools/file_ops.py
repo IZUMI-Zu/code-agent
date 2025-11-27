@@ -13,7 +13,7 @@ from typing import Optional, Type
 
 from pydantic import BaseModel, Field
 
-from ..utils.path import resolve_workspace_path
+from ..utils.path import get_relative_path, resolve_workspace_path
 from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
@@ -118,7 +118,7 @@ class WriteFileTool(BaseTool):
 
         # Write file
         path.write_text(content, encoding="utf-8")
-        return f"Successfully wrote {len(content)} chars to: {file_path}"
+        return f"Successfully wrote {len(content)} chars to: {get_relative_path(path)}"
 
     def get_args_schema(self) -> Type[BaseModel]:
         return WriteFileArgs
@@ -198,7 +198,7 @@ class ListFilesTool(BaseTool):
 
         scan(path)
 
-        output = [f"Directory: {path.absolute()}"]
+        output = [f"Directory: {get_relative_path(path) or '.'}"]
         output.extend(items)
 
         if len(items) >= limit:

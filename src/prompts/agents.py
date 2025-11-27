@@ -94,10 +94,10 @@ Step 1: web_search("FastAPI project template 2025")
 Result: No official tool, create manually
 
 Step 2: Scaffolding actions:
-1. create_directory("playground/app")
-2. create_directory("playground/app/routers")
-3. create_directory("playground/app/models")
-4. write_file("playground/requirements.txt", "fastapi\\nuvicorn\\npydantic")
+1. create_directory("app")
+2. create_directory("app/routers")
+3. create_directory("app/models")
+4. write_file("requirements.txt", "fastapi\\nuvicorn\\npydantic")
 
 Step 3: Submit plan:
 {
@@ -105,15 +105,15 @@ Step 3: Submit plan:
   "tasks": [
     {
       "id": 1,
-      "description": "Create app/main.py with FastAPI app and /health endpoint",
+      "description": "Create main.py with FastAPI app and /health endpoint",
       "depends_on": [],
       "priority": 5,
-      "acceptance_criteria": "File app/main.py exists with valid FastAPI code",
+      "acceptance_criteria": "File main.py exists with valid FastAPI code",
       "phase": "core"
     },
     {
       "id": 2,
-      "description": "Create User model in app/models/user.py",
+      "description": "Create User model in models/user.py",
       "depends_on": [1],
       "priority": 4,
       "acceptance_criteria": "User model has id, name, email with validation",
@@ -121,7 +121,7 @@ Step 3: Submit plan:
     },
     {
       "id": 3,
-      "description": "Create /users CRUD router in app/routers/users.py",
+      "description": "Create /users CRUD router in routers/users.py",
       "depends_on": [2],
       "priority": 4,
       "acceptance_criteria": "GET/POST /users endpoints work correctly",
@@ -224,7 +224,7 @@ This is MANDATORY. The Supervisor uses this to decide next steps.
 WORKFLOW
 ═══════════════════════════════════════════════════════════════
 
-1. Use 'list_files' to see what files exist in playground/
+1. Use 'list_files' to see what files exist in the workspace
 2. Use 'read_file' to examine code
 3. Use 'shell' for STATIC CHECKS ONLY (DO NOT start servers):
    - Python: Check syntax with "python -m py_compile <file>"
@@ -279,13 +279,13 @@ EXAMPLE 1: All checks pass
 REVIEW: PASSED
 
 Files verified:
-- playground/app/main.py (syntax valid)
-- playground/app/routers/users.py (syntax valid)
-- playground/requirements.txt (all dependencies listed)
+- app/main.py (syntax valid)
+- app/routers/users.py (syntax valid)
+- requirements.txt (all dependencies listed)
 
 Static checks performed:
-- python -m py_compile app/main.py: OK
-- python -m py_compile app/routers/users.py: OK
+- python -m py_compile main.py: OK
+- python -m py_compile routers/users.py: OK
 - All imports are valid
 
 No issues found. User can now test the application manually.
@@ -298,17 +298,17 @@ REVIEW: NEEDS_FIXES
 
 Issues found:
 1. requirements.txt missing 'pydantic' dependency
-2. app/main.py has syntax error on line 15 (missing colon)
-3. app/routers/users.py imports 'User' but model file doesn't exist
+2. main.py has syntax error on line 15 (missing colon)
+3. routers/users.py imports 'User' but model file doesn't exist
 
 Static checks performed:
-- python -m py_compile app/main.py: FAILED (SyntaxError line 15)
-- Missing file: app/models/user.py
+- python -m py_compile main.py: FAILED (SyntaxError line 15)
+- Missing file: models/user.py
 
 Suggested fixes:
 - Add pydantic==2.5.0 to requirements.txt
 - Fix syntax error in main.py:15 (add missing colon)
-- Create app/models/user.py with User model
+- Create models/user.py with User model
 
 ═══════════════════════════════════════════════════════════════
 CRITICAL RULES
