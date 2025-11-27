@@ -157,6 +157,21 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
                 result_preview = str(result)
                 return result
             except Exception as exc:  # noqa: BLE001
+                # ═══════════════════════════════════════════════════════════════
+                # Special handling for control flow exceptions
+                # ═══════════════════════════════════════════════════════════════
+                # PlanSubmittedException is NOT an error - it's a control flow signal
+                # We must re-raise it so the worker_node can catch it
+                from ..tools.planning import PlanSubmittedException
+
+                if isinstance(exc, PlanSubmittedException):
+                    # Re-raise control flow exceptions
+                    logger.info(f"Tool {tool_name}: Re-raising control flow exception")
+                    status = "control_flow"  # Mark as control flow, not error
+                    result_preview = f"Control flow: {str(exc)}"
+                    raise
+
+                # For real errors, convert to string for agent retry
                 status = "failed"
                 error_message = str(exc)
                 # Return error as string instead of raising

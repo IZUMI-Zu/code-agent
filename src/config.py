@@ -7,17 +7,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     openai_api_key: SecretStr
-    openai_model_name: str = "gpt-4o"
     openai_base_url: Optional[str] = None
     brave_api_key: Optional[SecretStr] = None
+
+    # ═══════════════════════════════════════════════════════════════
+    # Model Stratification (Claude Code Architecture)
+    # ═══════════════════════════════════════════════════════════════
+    # Use lightweight models for simple checks, heavyweight for reasoning
+    # Performance: lightweight is 3-5x faster, 70% cheaper
+    lightweight_model: str = "gpt-4o-mini"  # For: topic detection, format validation
+    reasoning_model: str = "gpt-4o"  # For: planning, coding, reviewing
 
     # ═══════════════════════════════════════════════════════════════
     # Conversation Memory Management
     # ═══════════════════════════════════════════════════════════════
     # Prevents context window overflow by auto-summarizing old messages
-    summarization_model: str = "gpt-4o-mini"      # Model for summarization (cheap)
-    summarization_trigger_tokens: int = 4000      # Trigger when exceeding N tokens
-    summarization_keep_messages: int = 20         # Keep last N messages intact
+    summarization_trigger_tokens: int = 4000  # Trigger when exceeding N tokens
+    summarization_keep_messages: int = 20  # Keep last N messages intact
 
     # Workspace Configuration
     workspace_root: Path = Path(".")

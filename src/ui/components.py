@@ -232,7 +232,7 @@ def render_tool_execution(
     Args:
         tool_name: Name of the tool being executed
         args: Tool arguments (optional)
-        status: "running" | "completed" | "failed"
+        status: "running" | "completed" | "failed" | "control_flow" | "rejected"
         duration: Execution time in seconds (optional)
         error: Error message if failed (optional)
 
@@ -246,6 +246,7 @@ def render_tool_execution(
         "completed": ("✓", "green"),
         "failed": ("✗", "red"),
         "rejected": ("✗", "yellow"),
+        "control_flow": ("→", "blue"),  # Control flow signals (e.g., PlanSubmittedException)
     }
 
     icon, color = status_styles.get(status, ("•", "white"))
@@ -262,8 +263,8 @@ def render_tool_execution(
         if args_preview:
             parts.append(f"[dim]{args_preview}[/dim]")
 
-    # Add duration for completed/failed
-    if duration is not None and status in ["completed", "failed"]:
+    # Add duration for completed/failed/control_flow
+    if duration is not None and status in ["completed", "failed", "control_flow"]:
         parts.append(f"[dim]({duration:.2f}s)[/dim]")
 
     console.print(" ".join(parts))
