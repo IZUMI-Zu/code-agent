@@ -366,50 +366,81 @@ Your job is to VERIFY the implementation:
                 state = {**state, "messages": list(state["messages"]) + [review_msg]}
                 logger.info(f"[{name}] Injected review context")
 
-            # Invoke worker agent (LangChain auto-streams when outer uses stream_mode="messages")
-            with worker_context(name):
-                result = agent_graph.invoke(state)
-
-            # Extract messages from result
-            new_messages = result.get("messages", [])
-            if not isinstance(new_messages, list):
-                new_messages = [new_messages]
-
-            # Build return state
-            return_state = {"messages": new_messages}
-
             # ═══════════════════════════════════════════════════════════════
-            # Extract Plan if this is Planner
+            # Invoke worker agent with PlanSubmittedException handling
             # ═══════════════════════════════════════════════════════════════
-            if name == "Planner":
-                for msg in new_messages:
-                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                        for tool_call in msg.tool_calls:
-                            if tool_call["name"] == "submit_plan":
-                                try:
-                                    plan_data = tool_call["args"].get("plan")
-                                    if plan_data:
-                                        # Handle different types of plan_data
-                                        if isinstance(plan_data, Plan):
-                                            plan = plan_data
-                                        elif isinstance(plan_data, dict):
-                                            plan = Plan(**plan_data)
-                                        elif isinstance(plan_data, str):
-                                            # Try to parse as JSON
-                                            import json
+            # For Planner: catch PlanSubmittedException to immediately stop
+            # after submit_plan is called. This is more reliable than
+            # prompt-based "STOP NOW" instructions.
+            #
+            # Reference: LangGraph docs recommend using exceptions for
+            # immediate termination of agent loops.
+            # ═══════════════════════════════════════════════════════════════
+            from ..tools.planning import PlanSubmittedException
 
-                                            plan = Plan(**json.loads(plan_data))
-                                        else:
-                                            logger.error(
-                                                f"[{name}] Unknown plan_data type: {type(plan_data)}"
-                                            )
-                                            continue
-                                        return_state["plan"] = plan
-                                        logger.info(f"[{name}] Plan extracted")
-                                except Exception as e:
-                                    logger.error(
-                                        f"[{name}] Plan extraction failed: {e}"
-                                    )
+            try:
+                with worker_context(name):
+                    result = agent_graph.invoke(state)
+
+                # Extract messages from result
+                new_messages = result.get("messages", [])
+                if not isinstance(new_messages, list):
+                    new_messages = [new_messages]
+
+                # Build return state
+                return_state = {"messages": new_messages}
+
+                # ═══════════════════════════════════════════════════════════════
+                # Extract Plan if this is Planner (fallback for normal completion)
+                # ═══════════════════════════════════════════════════════════════
+                if name == "Planner":
+                    for msg in new_messages:
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tool_call in msg.tool_calls:
+                                if tool_call["name"] == "submit_plan":
+                                    try:
+                                        plan_data = tool_call["args"].get("plan")
+                                        if plan_data:
+                                            # Handle different types of plan_data
+                                            if isinstance(plan_data, Plan):
+                                                plan = plan_data
+                                            elif isinstance(plan_data, dict):
+                                                plan = Plan(**plan_data)
+                                            elif isinstance(plan_data, str):
+                                                # Try to parse as JSON
+                                                import json
+
+                                                plan = Plan(**json.loads(plan_data))
+                                            else:
+                                                logger.error(
+                                                    f"[{name}] Unknown plan_data type: {type(plan_data)}"
+                                                )
+                                                continue
+                                            return_state["plan"] = plan
+                                            logger.info(f"[{name}] Plan extracted from tool call")
+                                    except Exception as e:
+                                        logger.error(
+                                            f"[{name}] Plan extraction failed: {e}"
+                                        )
+
+            except PlanSubmittedException as e:
+                # ═══════════════════════════════════════════════════════════════
+                # Plan submitted! Extract plan and return immediately.
+                # This is the preferred path - agent stopped immediately after
+                # submit_plan was called, no extra tool calls.
+                # ═══════════════════════════════════════════════════════════════
+                logger.info(f"[{name}] Plan submitted via exception - stopping immediately")
+                from langchain_core.messages import AIMessage
+
+                # Create a summary message for the conversation
+                summary_msg = AIMessage(
+                    content=f"Plan submitted successfully with {len(e.plan.tasks)} tasks. "
+                    f"The Coder agent will now implement this plan."
+                )
+                return {
+                    "messages": [summary_msg],
+                    "plan": e.plan,
+                }
 
             # ═══════════════════════════════════════════════════════════════
             # Extract review_status if this is Reviewer

@@ -52,6 +52,9 @@ Step 3: CREATE PHASED PLAN with TASK DEPENDENCIES
 
 Step 4: SUBMIT PLAN
    Use 'submit_plan' tool ONCE
+   
+   Note: After submit_plan is called, the system will automatically
+   hand off to the Coder agent. You don't need to do anything else.
 
 ═══════════════════════════════════════════════════════════════
 EXAMPLE 1: Build a React App (use scaffolding tool)
