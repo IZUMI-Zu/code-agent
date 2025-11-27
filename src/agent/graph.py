@@ -7,12 +7,16 @@ Architecture:
   - Planner: Project planning
   - Coder: Code generation
   - Reviewer: Code review
+
+Streaming Design (Best Practice):
+  - Worker nodes use regular functions (not generators)
+  - LLM calls use model.invoke() - LangChain auto-enables streaming
+  - External stream_mode="messages" captures token-level output
 """
 
-from typing import Literal, cast
+from typing import Literal
 
 from langchain.agents import create_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -23,17 +27,12 @@ from ..prompts import (
     CODER_PROMPT,
     PLANNER_PROMPT,
     REVIEWER_PROMPT,
-    SUPERVISOR_SYSTEM_PROMPT,
 )
 from ..tools.registry import get_registry
 from ..utils.logger import logger
 from .context import worker_context
 from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
-
-# ═══════════════════════════════════════════════════════════════
-# Configuration
-# ═══════════════════════════════════════════════════════════════
 
 
 def get_model():
@@ -46,43 +45,23 @@ def get_model():
     )
 
 
-# ═══════════════════════════════════════════════════════════════
-# Worker Agents
-# ═══════════════════════════════════════════════════════════════
-
-
 def create_worker(name: str, system_prompt: str, tools: list):
     """Create a Worker Agent"""
     model = get_model()
-
-    # Use create_agent to create a standard ReAct Agent
-    # It automatically handles the tool calling loop
     agent = create_agent(model, tools, system_prompt=system_prompt)
-
     return agent
 
 
 # Get tools
 registry = get_registry()
 all_tools = registry.get_all_tools()
-# Convert custom tools to LangChain tools
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
-
-# Filter out submit_plan for non-Planner agents
 lc_tools_without_plan = [t for t in lc_tools if t.name != "submit_plan"]
 
-# 1. Planner Agent - has submit_plan tool
+# Create worker agents
 planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools)
-
-# 2. Coder Agent - no submit_plan tool
 coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_without_plan)
-
-# 3. Reviewer Agent - no submit_plan tool
 reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_without_plan)
-
-# ═══════════════════════════════════════════════════════════════
-# Supervisor (Orchestrator)
-# ═══════════════════════════════════════════════════════════════
 
 members = ["Planner", "Coder", "Reviewer"]
 options = ["FINISH"] + members
@@ -90,108 +69,111 @@ options = ["FINISH"] + members
 
 class Router(BaseModel):
     """Worker selection router"""
-
     next: Literal["Planner", "Coder", "Reviewer", "FINISH"]
 
 
 def supervisor_node(state: AgentState):
-    """Supervisor Node: Decides the next executor based on workflow phase"""
+    """
+    Supervisor Node: Intelligent routing using hybrid approach
+    """
     phase = state.get("phase", "planning")
     plan = state.get("plan")
     messages = state.get("messages", [])
 
     logger.info(f"Supervisor: Current phase = {phase}, messages count = {len(messages)}")
 
-    # If phase is "done" but there are new messages, start a new workflow
-    if phase == "done":
-        # Check if there's a new user message (restart workflow)
-        if messages and hasattr(messages[-1], "type") and messages[-1].type == "human":
-            logger.info("Supervisor: New user message detected, restarting workflow")
-            return {"next": "Planner", "phase": "planning", "plan": None}
-        else:
-            return {"next": "FINISH"}
+    def is_last_message_from_user():
+        if not messages:
+            return False
+        last_msg = messages[-1]
+        if hasattr(last_msg, "type") and last_msg.type == "human":
+            return True
+        if last_msg.__class__.__name__ == "HumanMessage":
+            return True
+        return False
 
-    # Phase-based routing (deterministic, no LLM needed for basic flow)
+    def count_user_messages():
+        count = 0
+        for msg in messages:
+            if hasattr(msg, "type") and msg.type == "human":
+                count += 1
+            elif msg.__class__.__name__ == "HumanMessage":
+                count += 1
+        return count
+
+    if messages:
+        last_msg = messages[-1]
+        msg_type = getattr(last_msg, "type", None) or last_msg.__class__.__name__
+        logger.info(f"Supervisor: Last message type = {msg_type}")
+
+    # New user message -> route to Planner
+    if is_last_message_from_user():
+        user_msg_count = count_user_messages()
+        logger.info(f"Supervisor: User message detected (total: {user_msg_count}), routing to Planner")
+        return {"next": "Planner", "phase": "planning", "plan": None}
+
+    # Phase-based routing
     if phase == "planning":
         if plan is not None:
-            # Plan submitted, move to coding phase
             logger.info("Supervisor: Plan submitted, moving to coding phase")
             return {"next": "Coder", "phase": "coding"}
         else:
-            # Still planning
-            return {"next": "Planner"}
+            logger.info("Supervisor: Planning phase complete without plan, finishing")
+            return {"next": "FINISH", "phase": "done"}
 
     elif phase == "coding":
-        # After Coder finishes, move to review
         logger.info("Supervisor: Coding done, moving to review phase")
         return {"next": "Reviewer", "phase": "reviewing"}
 
     elif phase == "reviewing":
-        # After Reviewer finishes, we're done
         logger.info("Supervisor: Review done, finishing")
         return {"next": "FINISH", "phase": "done"}
 
+    elif phase == "done":
+        return {"next": "FINISH"}
+
     else:
-        # Default: start from planning
         return {"next": "Planner", "phase": "planning"}
-
-
-# ═══════════════════════════════════════════════════════════════
-# Build Graph
-# ═══════════════════════════════════════════════════════════════
 
 
 def create_multi_agent_graph():
     workflow = StateGraph(AgentState)
-
-    # Add Supervisor node
     workflow.add_node("Supervisor", supervisor_node)
 
     # ═══════════════════════════════════════════════════════════════
-    # Worker Node Factory (Generator-Based for Stream Visibility)
+    # Worker Node Factory (Regular Function for stream_mode="messages")
     # ═══════════════════════════════════════════════════════════════
-    # Design Philosophy (Good Taste: Eliminate Special Cases):
+    # Best Practice from LangGraph docs:
+    #   - Use regular functions (not generators)
+    #   - LLM calls with model.invoke() auto-enable streaming
+    #   - External stream_mode="messages" captures token-level output
     #
-    #   Problem: agent.invoke() is a BLACK BOX
-    #     - Tool calls invisible to main stream
-    #     - UI frozen during execution
-    #     - Poor user experience
-    #
-    #   Solution: Generator nodes + agent.stream()
-    #     - Each tool call -> yield update -> visible in main stream
-    #     - UI updates in real-time
-    #     - No special cases, clean data flow
-    #
-    #   How it works:
-    #     Worker node is a GENERATOR function
-    #     For each sub-graph update (model call, tool call, tool result):
-    #       1. Extract new messages
-    #       2. YIELD them to main graph
-    #       3. Main graph's stream picks them up IMMEDIATELY
-    #       4. UI renders them in real-time
-    #
-    #   Simplicity through structure, not through hacks.
+    # This allows the main graph's stream() to capture LLM tokens
+    # from inside the worker agent's execution.
     # ═══════════════════════════════════════════════════════════════
 
     def make_worker_node(agent_graph, name: str):
         """
-        Create a generator-based worker node that streams updates
+        Create a regular function worker node that supports streaming
 
         Args:
             agent_graph: The compiled agent graph (from create_agent)
             name: Worker name for logging
 
         Returns:
-            Generator function that yields state updates
+            Regular function that returns state updates
         """
 
         def worker_node(state: AgentState):
             """
-            Generator node: yields incremental updates from worker execution
+            Regular node: invokes worker and returns final state
+            
+            Note: Even though we use invoke(), LangChain auto-enables
+            streaming when the outer graph uses stream_mode="messages"
             """
             logger.info(f"[{name}] Starting execution...")
 
-            # For Coder: inject Plan into messages so it knows what to implement
+            # For Coder: inject Plan into messages
             if name == "Coder" and state.get("plan"):
                 from langchain_core.messages import SystemMessage
                 plan = state["plan"]
@@ -200,41 +182,25 @@ def create_multi_agent_graph():
                     plan_text += f"- Task {task.id}: {task.description}\n"
                 plan_text += "\nImplement these tasks using the available tools. Do NOT create a new plan."
                 
-                # Add plan as a system message
                 plan_msg = SystemMessage(content=plan_text)
                 state = {**state, "messages": list(state["messages"]) + [plan_msg]}
                 logger.info(f"[{name}] Injected plan into messages")
 
-            # Track accumulated messages for Plan extraction
-            all_new_msgs = []
-            num_old_msgs = len(state["messages"])
-
-            # Stream worker agent execution
-            # Each iteration yields one step: model call, tool call, or tool result
+            # Invoke worker agent (LangChain auto-streams when outer uses stream_mode="messages")
             with worker_context(name):
-                for chunk in agent_graph.stream(state, stream_mode="updates"):
-                    # chunk structure: {node_name: {messages: [...]}}
-                    for node_name, node_output in chunk.items():
-                        logger.debug(f"[{name}/{node_name}] Update received")
+                result = agent_graph.invoke(state)
 
-                        if "messages" in node_output:
-                            # With stream_mode="updates", messages are already incremental updates
-                            # No need to slice - just use them directly
-                            new_msgs = node_output["messages"]
-                            if not isinstance(new_msgs, list):
-                                new_msgs = [new_msgs]
+            # Extract messages from result
+            new_messages = result.get("messages", [])
+            if not isinstance(new_messages, list):
+                new_messages = [new_messages]
 
-                            if new_msgs:
-                                # YIELD update to main graph stream
-                                # This makes the update IMMEDIATELY visible to UI
-                                yield {"messages": new_msgs}
+            # Build return state
+            return_state = {"messages": new_messages}
 
-                                # Accumulate for final processing
-                                all_new_msgs.extend(new_msgs)
-
-            # Final update: Extract Plan if this is Planner
+            # Extract Plan if this is Planner
             if name == "Planner":
-                for msg in all_new_msgs:
+                for msg in new_messages:
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
                         for tool_call in msg.tool_calls:
                             if tool_call["name"] == "submit_plan":
@@ -242,14 +208,13 @@ def create_multi_agent_graph():
                                     plan_data = tool_call["args"].get("plan")
                                     if plan_data:
                                         plan = Plan(**plan_data)
-                                        yield {"plan": plan}
+                                        return_state["plan"] = plan
                                         logger.info(f"[{name}] Plan extracted")
                                 except Exception as e:
-                                    logger.error(
-                                        f"[{name}] Plan extraction failed: {e}"
-                                    )
+                                    logger.error(f"[{name}] Plan extraction failed: {e}")
 
-            logger.info(f"[{name}] Completed with {len(all_new_msgs)} messages")
+            logger.info(f"[{name}] Completed with {len(new_messages)} messages")
+            return return_state
 
         return worker_node
 
@@ -259,22 +224,18 @@ def create_multi_agent_graph():
     workflow.add_node("Reviewer", make_worker_node(reviewer_agent, "Reviewer"))
 
     # Add edges
-    # Always from START to Supervisor
     workflow.add_edge(START, "Supervisor")
 
-    # Supervisor routes based on next field
     workflow.add_conditional_edges(
         "Supervisor",
         lambda state: state["next"],
         {"Planner": "Planner", "Coder": "Coder", "Reviewer": "Reviewer", "FINISH": END},
     )
 
-    # Workers return to Supervisor after completion
     workflow.add_edge("Planner", "Supervisor")
     workflow.add_edge("Coder", "Supervisor")
     workflow.add_edge("Reviewer", "Supervisor")
 
-    # Compile graph
     return workflow.compile(checkpointer=MemorySaver())
 
 

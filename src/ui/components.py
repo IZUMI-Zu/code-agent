@@ -6,23 +6,97 @@ Design Principles:
   - Single Responsibility (Message/Tool/State independent)
   - Stateless Rendering (Input Data -> Output Format, No Side Effects)
   - Visual Clarity (Borders/Colors/Icons distinguish content)
+  - Streaming Support (Token-level real-time rendering)
 """
 
 import json
+import sys
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.markup import escape
 from rich.status import Status
 from rich.syntax import Syntax
+from rich.text import Text
 
 # ═══════════════════════════════════════════════════════════════
 # Global Console Instance
 # ═══════════════════════════════════════════════════════════════
 
 console = Console()
+
+
+# ═══════════════════════════════════════════════════════════════
+# Streaming Text Renderer
+# ═══════════════════════════════════════════════════════════════
+
+
+class StreamingText:
+    """
+    Real-time streaming text renderer for AI responses
+
+    Design Philosophy:
+      - Token-by-token rendering for immediate feedback
+      - Use Rich Live for flicker-free updates
+      - Final Markdown render replaces streaming text (no duplication)
+
+    Usage:
+        streaming = StreamingText()
+        streaming.start()
+        for token in tokens:
+            streaming.append(token)
+        streaming.finish()
+    """
+
+    def __init__(self):
+        self._buffer = ""
+        self._live = None
+        self._finished = False
+
+    def start(self):
+        """Start the streaming display"""
+        self._live = Live(
+            Text(""),
+            console=console,
+            refresh_per_second=15,
+            vertical_overflow="visible",
+        )
+        self._live.start()
+
+    def append(self, token: str):
+        """Append a token to the stream"""
+        if self._finished:
+            return
+
+        self._buffer += token
+
+        if self._live:
+            # During streaming, show plain text for speed
+            # Markdown parsing on every token is too slow
+            self._live.update(Text(self._buffer))
+
+    def finish(self):
+        """Finish streaming and render final markdown (replaces streaming text)"""
+        if self._finished:
+            return
+
+        self._finished = True
+
+        if self._live:
+            # Update Live with final Markdown before stopping
+            # This replaces the plain text with formatted Markdown
+            if self._buffer.strip():
+                self._live.update(Markdown(self._buffer))
+            self._live.stop()
+            self._live = None
+
+    @property
+    def text(self) -> str:
+        """Get the accumulated text"""
+        return self._buffer
 
 
 # ═══════════════════════════════════════════════════════════════

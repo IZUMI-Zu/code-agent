@@ -5,20 +5,23 @@ TUI Application Main Controller
 Responsibilities:
   - Manage user input loop
   - Call Agent to execute tasks
-  - Render execution results
+  - Render execution results with streaming support
+
+Design Philosophy (Best Practice from LangGraph docs):
+  - Use stream_mode="messages" for token-level LLM streaming
+  - Sync stream() is the recommended approach
+  - LangChain auto-enables streaming for model.invoke() calls
 """
 
 import threading
 import time
 import uuid
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.types import Command
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.styles import Style as PromptStyle
-from rich.markup import escape
 from rich.prompt import Prompt
 
 from ..agent.graph import agent_graph
@@ -26,7 +29,6 @@ from ..utils.event_bus import drain_tool_events
 from ..utils.logger import logger
 from .components import (
     console,
-    render_message,
     render_separator,
     render_shell_finished,
     render_shell_output,
@@ -36,30 +38,21 @@ from .components import (
     render_welcome,
     show_thinking,
     start_tool_spinner,
+    StreamingText,
 )
-
-# ═══════════════════════════════════════════════════════════════
-# TUI Application Class
-# ═══════════════════════════════════════════════════════════════
 
 
 class TUIApp:
-    """
-    Main Controller for TUI Application
-
-    Good Taste:
-      - Loop logic is simple, no deep nesting
-      - State management delegated to LangGraph, UI only responsible for display
-    """
+    """Main Controller for TUI Application"""
 
     def __init__(self):
         self.graph = agent_graph
         self.thread_id = str(uuid.uuid4())
         self.config = {"configurable": {"thread_id": self.thread_id}}
         self.state = {"messages": [], "current_task": "", "is_finished": False}
-        self.session = PromptSession()  # Initialize prompt_toolkit session
+        self.session = PromptSession()
         self._tool_event_start_times = {}
-        self._active_spinners = {}  # call_id -> Status
+        self._active_spinners = {}
         self._tool_event_lock = threading.Lock()
         self._event_stop = threading.Event()
         self._event_thread = threading.Thread(
@@ -74,12 +67,10 @@ class TUIApp:
 
         @kb.add("enter")
         def _(event):
-            """Enter to submit"""
             event.current_buffer.validate_and_handle()
 
         @kb.add("escape", "enter")
         def _(event):
-            """Alt+Enter (Esc+Enter) to insert newline"""
             event.current_buffer.insert_text("\n")
 
         return kb
@@ -92,8 +83,7 @@ class TUIApp:
         try:
             while True:
                 try:
-                    # Get user input using prompt_toolkit for multiline support
-                    console.print()  # Add some spacing
+                    console.print()
                     user_input = self.session.prompt(
                         HTML("<b><cyan>You</cyan></b>: "),
                         multiline=True,
@@ -103,33 +93,26 @@ class TUIApp:
                         ),
                     )
 
-                    # Exit command
                     if user_input.lower().strip() in ["exit", "quit", "q"]:
                         console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
                         logger.info("Application exit requested by user")
                         break
 
-                    # Clear screen command
                     if user_input.lower().strip() == "clear":
                         console.clear()
                         render_welcome()
                         continue
 
-                    # Skip empty input
                     if not user_input.strip():
                         continue
 
-                    # Handle user request
                     self._handle_user_input(user_input)
-
                     render_separator()
 
                 except KeyboardInterrupt:
-                    # Handle Ctrl+C
                     console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
                     break
                 except EOFError:
-                    # Handle Ctrl+D
                     console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
                     break
                 except Exception as e:
@@ -140,106 +123,111 @@ class TUIApp:
 
     def _handle_user_input(self, user_input: str):
         """
-        Handle user input with real-time tool execution tracking
+        Handle user input with token-level streaming
 
-        Design Philosophy:
-          - Stream mode "updates" for fine-grained execution visibility
-          - Track tool execution time for performance awareness
-          - Map tool_call_id -> tool_name for accurate reporting
-          - User sees every step as it happens
+        Best Practice (from LangGraph docs):
+          - Use stream_mode="messages" for LLM token streaming
+          - Returns tuple (message_chunk, metadata)
+          - LangChain auto-enables streaming for model.invoke() in nodes
         """
         logger.info(f"User input: {user_input}")
 
-        # Add user message to state
         user_message = HumanMessage(content=user_input)
         self.state["messages"].append(user_message)
 
-        # Note: User message already displayed by prompt_toolkit, no need to render again
-
-        # Display thinking indicator
         progress = show_thinking("Analyzing request")
-
         input_payload = {"messages": [user_message]}
+
+        # Streaming state
+        streaming_text = None
+        current_node = None
         
-        # Track rendered message IDs to avoid duplicates
-        rendered_msg_ids = set()
+        # Worker name mapping for display
+        worker_labels = {
+            "Planner": "[magenta]Planner[/magenta]",
+            "Coder": "[blue]Coder[/blue]",
+            "Reviewer": "[yellow]Reviewer[/yellow]",
+        }
 
         try:
             while True:
-                # Execute Agent with stream_mode="updates" for step-by-step visibility
-                for chunk in self.graph.stream(
-                    input_payload, config=self.config, stream_mode="updates"
+                # Use stream_mode="messages" for token-level streaming
+                # subgraphs=True to capture tokens from worker agents (which are subgraphs)
+                for chunk, metadata in self.graph.stream(
+                    input_payload, 
+                    config=self.config, 
+                    stream_mode="messages",
+                    subgraphs=True,
                 ):
-                    # chunk is dict: {node_name: node_output}
-                    for node_name, node_output in chunk.items():
-                        logger.debug(f"Node {node_name} output: {node_output}")
+                    node_name = metadata.get("langgraph_node", "")
 
-                        # Stop thinking indicator on first real output
-                        if progress and node_name != "__start__":
-                            progress.stop()
-                            progress = None
+                    # Stop thinking indicator on first output
+                    if progress:
+                        progress.stop()
+                        progress = None
 
-                        # Process messages from this node
-                        if isinstance(node_output, dict) and "messages" in node_output:
-                            new_messages = node_output["messages"]
+                    # Handle AIMessageChunk (streaming tokens)
+                    if isinstance(chunk, AIMessageChunk):
+                        content = chunk.content if hasattr(chunk, "content") else ""
 
-                            for msg in new_messages:
-                                # AI Message with tool calls - track and display
-                                if (
-                                    isinstance(msg, AIMessage)
-                                    and hasattr(msg, "tool_calls")
-                                    and msg.tool_calls
-                                ):
-                                    # First, render any reasoning/explanation text
-                                    if hasattr(msg, "content") and msg.content.strip():
-                                        render_message(msg)
+                        # Skip empty content or tool call chunks
+                        if not content:
+                            continue
 
-                                    continue
+                        # Check if we're starting a new streaming block
+                        if streaming_text is None:
+                            # Show worker label if available
+                            label = worker_labels.get(node_name, "[green]Assistant[/green]")
+                            console.print(f"\n[bold]{label}:[/bold]")
+                            streaming_text = StreamingText()
+                            streaming_text.start()
+                            current_node = node_name
 
-                                # Tool Message - show completion with timing
-                                elif isinstance(msg, ToolMessage):
-                                    continue
+                        # If node changed, finish current stream and start new
+                        elif current_node != node_name:
+                            streaming_text.finish()
+                            label = worker_labels.get(node_name, "[green]Assistant[/green]")
+                            console.print(f"\n[bold]{label}:[/bold]")
+                            streaming_text = StreamingText()
+                            streaming_text.start()
+                            current_node = node_name
 
-                                # Regular AI message - display (with deduplication)
-                                else:
-                                    # Use message id to deduplicate
-                                    msg_id = getattr(msg, "id", None) or id(msg)
-                                    if msg_id not in rendered_msg_ids:
-                                        rendered_msg_ids.add(msg_id)
-                                        render_message(msg)
+                        streaming_text.append(content)
 
-                            # Update local state
-                            self.state["messages"].extend(new_messages)
+                    # Handle complete AIMessage (usually after streaming ends)
+                    elif isinstance(chunk, AIMessage):
+                        if streaming_text:
+                            streaming_text.finish()
+                            streaming_text = None
+                            current_node = None
 
-                # Check for interrupts
+                # Finish streaming if still active
+                if streaming_text:
+                    streaming_text.finish()
+                    streaming_text = None
+
+                # Check for interrupts (tool confirmations)
                 snapshot = self.graph.get_state(self.config)
                 if snapshot.next:
                     tasks = getattr(snapshot, "tasks", [])
                     if tasks and tasks[0].interrupts:
                         interrupt_value = tasks[0].interrupts[0].value
 
-                        if progress:
-                            progress.stop()
-                            progress = None
-
-                        # Ask user
                         decision = self._handle_interrupt(interrupt_value)
-
-                        # Resume
                         input_payload = Command(resume=decision)
-
-                        # Restart thinking
-                        progress = show_thinking("Executing tool")
+                        progress = show_thinking("Continuing")
                         continue
 
                 break
 
         finally:
-            # Ensure progress bar stops
             if progress:
                 progress.stop()
+            if streaming_text:
+                streaming_text.finish()
 
     def _tool_event_consumer(self):
+        """Background thread for tool event processing"""
         while True:
             events = drain_tool_events()
             if not events:
@@ -258,21 +246,20 @@ class TUIApp:
             except Exception:
                 pass
 
-        # Flush any remaining events before exit
         remaining = drain_tool_events()
         for event in remaining:
             self._process_tool_event(event)
 
     def _process_tool_event(self, event):
+        """Process a single tool event"""
         event_type = event.get("event_type")
         tool_name = event.get("tool", "Unknown")
         worker = event.get("worker")
 
-        # ─── Shell Streaming Events (Claude Code Style) ───
+        # Shell streaming events
         if event_type == "shell_started":
             command = event.get("command", "")
             cwd = event.get("cwd", ".")
-            # Stop any active spinner for shell tool before showing output
             for call_id, spinner in list(self._active_spinners.items()):
                 spinner.stop()
             self._active_spinners.clear()
@@ -291,7 +278,7 @@ class TUIApp:
             render_shell_finished(return_code, status)
             return
 
-        # ─── Regular Tool Events ───
+        # Regular tool events
         if event_type == "tool_started":
             call_id = event.get("call_id")
             timestamp = event.get("timestamp", time.time())
@@ -299,7 +286,6 @@ class TUIApp:
                 with self._tool_event_lock:
                     self._tool_event_start_times[call_id] = timestamp
 
-            # Start spinner instead of printing static line
             spinner = start_tool_spinner(tool_name, event.get("args"))
             if call_id:
                 self._active_spinners[call_id] = spinner
@@ -313,7 +299,6 @@ class TUIApp:
                 with self._tool_event_lock:
                     start_ts = self._tool_event_start_times.pop(call_id, None)
 
-            # Stop spinner
             if call_id and call_id in self._active_spinners:
                 spinner = self._active_spinners.pop(call_id)
                 spinner.stop()
@@ -323,7 +308,7 @@ class TUIApp:
             status = event.get("status", "completed")
             render_tool_execution(
                 tool_name,
-                event.get("args"),  # Pass args to render_tool_execution for preview
+                event.get("args"),
                 status=status,
                 duration=duration,
                 error=event.get("error"),
@@ -331,17 +316,13 @@ class TUIApp:
             )
             preview = event.get("result_preview")
             if status == "completed" and preview:
-                # Indent each line of the preview for better visual hierarchy
+                from rich.markup import escape
                 lines = preview.split("\n")
                 for line in lines:
                     console.print(f"  [dim]{escape(line)}[/dim]")
             return
 
         if event_type == "tool_rejected":
-            # Stop spinner if exists (though rejected usually happens before start,
-            # but if we had a pre-check spinner, we'd stop it here)
-            # In current flow, rejection happens before tool_started usually,
-            # but if we change flow, good to be safe.
             render_tool_execution(
                 tool_name, event.get("args"), status="rejected", worker=worker
             )
@@ -374,18 +355,13 @@ class TUIApp:
             return {"action": "approve"}
         elif choice == "n":
             reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
-            console.print(f"\n[red]❌ Rejected.[/red]")
+            console.print("\n[red]❌ Rejected.[/red]")
             return {"action": "reject", "reason": reason}
         elif choice == "a":
             console.print(
                 f"\n[green]✓ Always allowing {tool_name} for this session...[/green]"
             )
             return {"action": "allow_pattern", "pattern": tool_name}
-
-
-# ═══════════════════════════════════════════════════════════════
-# Application Entry Point
-# ═══════════════════════════════════════════════════════════════
 
 
 def main():
