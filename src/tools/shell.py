@@ -11,14 +11,18 @@ Design Philosophy:
   - Shell is for ADVANCED operations (git, npm, compilers, etc.)
   - For basic filesystem ops, use dedicated cross-platform tools
   - Keep raw power available, but warn about alternatives
+  - Real-time output streaming (Claude Code style)
 """
 
 import platform
 import subprocess
+import threading
+import time
 from typing import Type
 
 from pydantic import BaseModel, Field
 
+from ..utils.event_bus import publish_tool_event
 from ..utils.path import resolve_workspace_path
 from .base import BaseTool
 
@@ -30,6 +34,14 @@ from .base import BaseTool
 class ShellArgs(BaseModel):
     command: str = Field(..., description="Shell command to execute")
     cwd: str = Field(".", description="Working directory for execution")
+    auto_yes: bool = Field(
+        False,
+        description="Auto-answer 'yes' to interactive prompts (e.g., npm install confirmations)",
+    )
+    timeout: int = Field(
+        None,
+        description="Custom timeout in seconds (default: 60). Use higher values for long-running commands like npm install, npx create-*, cargo build, etc.",
+    )
 
 
 class ShellTool(BaseTool):
@@ -69,6 +81,14 @@ Use shell ONLY for:
 - Process management (ps, kill)
 - System queries (which, env)
 
+TIPS:
+- Use auto_yes=true for commands that may prompt for confirmation (e.g., npx, npm install)
+- Or use flags like --yes, -y, --force where available
+- Use timeout=300 (5 min) or higher for long-running commands like:
+  * npx create-react-app, create-next-app (use timeout=300)
+  * npm install with many dependencies (use timeout=180)
+  * cargo build, go build (use timeout=300)
+
 Returns stdout, stderr, and exit code.""",
             timeout=timeout,
             max_retries=0,  # Shell commands shouldn't be retried automatically
@@ -76,7 +96,9 @@ Returns stdout, stderr, and exit code.""",
         # Use same timeout for subprocess (first line of defense)
         self.subprocess_timeout = timeout
 
-    def _run(self, command: str, cwd: str = ".") -> str:
+    def _run(
+        self, command: str, cwd: str = ".", auto_yes: bool = False, timeout: int = None
+    ) -> str:
         # Validate working directory
         try:
             work_dir = resolve_workspace_path(cwd)
@@ -86,45 +108,145 @@ Returns stdout, stderr, and exit code.""",
         if not work_dir.exists():
             raise FileNotFoundError(f"Working directory not found: {cwd}")
 
-        # Execute command (unified timeout and error handling)
+        # Use custom timeout if provided, otherwise use default
+        effective_timeout = timeout if timeout is not None else self.subprocess_timeout
+
+        # Execute command with real-time output streaming
+        return self._run_with_streaming(command, work_dir, auto_yes, effective_timeout)
+
+    def _run_with_streaming(
+        self, command: str, work_dir, auto_yes: bool = False, timeout: int = 60
+    ) -> str:
+        """
+        Execute command with real-time output streaming (Claude Code style)
+        
+        Design Philosophy:
+          - User sees output as it happens, not after completion
+          - Both stdout and stderr are streamed in real-time
+          - Full output is still captured for return value
+          - auto_yes: pipe 'y' to stdin for interactive prompts
+        """
+        stdout_lines = []
+        stderr_lines = []
+        
+        # Publish shell start event
+        publish_tool_event({
+            "event_type": "shell_started",
+            "command": command,
+            "cwd": str(work_dir),
+            "auto_yes": auto_yes,
+            "timeout": timeout,
+        })
+
         try:
-            result = subprocess.run(
+            # Use Popen for real-time output
+            # If auto_yes, we'll pipe stdin to auto-answer prompts
+            process = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=str(work_dir),
-                capture_output=True,
+                stdin=subprocess.PIPE if auto_yes else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=self.subprocess_timeout,
+                bufsize=1,  # Line buffered
             )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                f"Command timed out ({self.subprocess_timeout}s): {command}"
+            
+            # If auto_yes, send 'y' and close stdin
+            if auto_yes and process.stdin:
+                try:
+                    process.stdin.write("y\n")
+                    process.stdin.flush()
+                    process.stdin.close()
+                except Exception:
+                    pass  # stdin might already be closed
+
+            # Read stdout and stderr in separate threads
+            def read_stream(stream, lines_list, stream_type):
+                try:
+                    for line in iter(stream.readline, ""):
+                        if line:
+                            line_stripped = line.rstrip("\n\r")
+                            lines_list.append(line_stripped)
+                            # Publish each line as it comes
+                            publish_tool_event({
+                                "event_type": "shell_output",
+                                "stream": stream_type,
+                                "line": line_stripped,
+                            })
+                finally:
+                    stream.close()
+
+            stdout_thread = threading.Thread(
+                target=read_stream, args=(process.stdout, stdout_lines, "stdout")
             )
+            stderr_thread = threading.Thread(
+                target=read_stream, args=(process.stderr, stderr_lines, "stderr")
+            )
+
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Wait for process with timeout
+            try:
+                return_code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
+                publish_tool_event({
+                    "event_type": "shell_finished",
+                    "command": command,
+                    "status": "timeout",
+                })
+                raise RuntimeError(
+                    f"Command timed out ({timeout}s): {command}"
+                )
+
+            # Wait for threads to finish reading
+            stdout_thread.join(timeout=2)
+            stderr_thread.join(timeout=2)
+
+            # Publish shell finished event
+            publish_tool_event({
+                "event_type": "shell_finished",
+                "command": command,
+                "return_code": return_code,
+                "status": "completed" if return_code == 0 else "failed",
+            })
+
         except Exception as e:
+            if "timed out" not in str(e):
+                publish_tool_event({
+                    "event_type": "shell_finished",
+                    "command": command,
+                    "status": "error",
+                    "error": str(e),
+                })
             raise RuntimeError(f"Command execution error: {str(e)}")
 
         # Construct output (return full info for both success and failure)
         output_lines = [
             f"Command: {command}",
             f"Working Dir: {work_dir}",
-            f"Return Code: {result.returncode}",
+            f"Return Code: {return_code}",
             "",
         ]
 
-        if result.stdout:
-            output_lines.extend(["─── STDOUT ───", result.stdout.strip()])
+        stdout_text = "\n".join(stdout_lines)
+        stderr_text = "\n".join(stderr_lines)
 
-        if result.stderr:
-            output_lines.extend(["─── STDERR ───", result.stderr.strip()])
+        if stdout_text:
+            output_lines.extend(["─── STDOUT ───", stdout_text])
+
+        if stderr_text:
+            output_lines.extend(["─── STDERR ───", stderr_text])
 
         # Raise exception on failure (let base class catch it)
-        if result.returncode != 0:
-            # If stderr exists, prioritize it
-            error_msg = (
-                result.stderr.strip() if result.stderr else result.stdout.strip()
-            )
+        if return_code != 0:
+            error_msg = stderr_text if stderr_text else stdout_text
             raise RuntimeError(
-                f"Command failed (Code {result.returncode}):\n{error_msg}"
+                f"Command failed (Code {return_code}):\n{error_msg}"
             )
 
         return "\n".join(output_lines)

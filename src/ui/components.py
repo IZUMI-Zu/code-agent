@@ -248,6 +248,43 @@ def render_separator() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
+# Shell Output Streaming (Claude Code Style)
+# ═══════════════════════════════════════════════════════════════
+
+
+def render_shell_start(command: str, cwd: str = None) -> None:
+    """Render shell command start indicator"""
+    console.print()
+    console.print(f"[bold cyan]$ {escape(command)}[/bold cyan]")
+    if cwd and cwd != ".":
+        console.print(f"[dim]  (in {escape(cwd)})[/dim]")
+
+
+def render_shell_output(line: str, stream: str = "stdout") -> None:
+    """
+    Render a single line of shell output in real-time
+    
+    Args:
+        line: Output line content
+        stream: "stdout" or "stderr"
+    """
+    if stream == "stderr":
+        console.print(f"[red]{escape(line)}[/red]")
+    else:
+        console.print(f"[dim]{escape(line)}[/dim]")
+
+
+def render_shell_finished(return_code: int = 0, status: str = "completed") -> None:
+    """Render shell command completion status"""
+    if status == "completed" and return_code == 0:
+        console.print(f"[green]✓ Command completed (exit code: {return_code})[/green]")
+    elif status == "timeout":
+        console.print("[yellow]⚠ Command timed out[/yellow]")
+    else:
+        console.print(f"[red]✗ Command failed (exit code: {return_code})[/red]")
+
+
+# ═══════════════════════════════════════════════════════════════
 # Confirmation Dialog
 # ═══════════════════════════════════════════════════════════════
 

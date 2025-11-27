@@ -28,6 +28,9 @@ from .components import (
     console,
     render_message,
     render_separator,
+    render_shell_finished,
+    render_shell_output,
+    render_shell_start,
     render_tool_confirmation,
     render_tool_execution,
     render_welcome,
@@ -265,6 +268,30 @@ class TUIApp:
         tool_name = event.get("tool", "Unknown")
         worker = event.get("worker")
 
+        # ─── Shell Streaming Events (Claude Code Style) ───
+        if event_type == "shell_started":
+            command = event.get("command", "")
+            cwd = event.get("cwd", ".")
+            # Stop any active spinner for shell tool before showing output
+            for call_id, spinner in list(self._active_spinners.items()):
+                spinner.stop()
+            self._active_spinners.clear()
+            render_shell_start(command, cwd)
+            return
+
+        if event_type == "shell_output":
+            line = event.get("line", "")
+            stream = event.get("stream", "stdout")
+            render_shell_output(line, stream)
+            return
+
+        if event_type == "shell_finished":
+            return_code = event.get("return_code", 0)
+            status = event.get("status", "completed")
+            render_shell_finished(return_code, status)
+            return
+
+        # ─── Regular Tool Events ───
         if event_type == "tool_started":
             call_id = event.get("call_id")
             timestamp = event.get("timestamp", time.time())
