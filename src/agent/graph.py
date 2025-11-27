@@ -68,14 +68,17 @@ all_tools = registry.get_all_tools()
 # Convert custom tools to LangChain tools
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
-# 1. Planner Agent
+# Filter out submit_plan for non-Planner agents
+lc_tools_without_plan = [t for t in lc_tools if t.name != "submit_plan"]
+
+# 1. Planner Agent - has submit_plan tool
 planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools)
 
-# 2. Coder Agent
-coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools)
+# 2. Coder Agent - no submit_plan tool
+coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_without_plan)
 
-# 3. Reviewer Agent
-reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools)
+# 3. Reviewer Agent - no submit_plan tool
+reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_without_plan)
 
 # ═══════════════════════════════════════════════════════════════
 # Supervisor (Orchestrator)
@@ -92,30 +95,45 @@ class Router(BaseModel):
 
 
 def supervisor_node(state: AgentState):
-    """Supervisor Node: Decides the next executor"""
-    messages = state["messages"]
+    """Supervisor Node: Decides the next executor based on workflow phase"""
+    phase = state.get("phase", "planning")
+    plan = state.get("plan")
+    messages = state.get("messages", [])
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", SUPERVISOR_SYSTEM_PROMPT),
-            MessagesPlaceholder(variable_name="messages"),
-            (
-                "system",
-                "Given the conversation above, who should act next?"
-                " Or should we FINISH? Select one of: {options}",
-            ),
-        ]
-    ).partial(options=str(options), members=", ".join(members))
+    logger.info(f"Supervisor: Current phase = {phase}, messages count = {len(messages)}")
 
-    model = get_model()
-    # Use with_structured_output to enforce structured output
-    chain = prompt | model.with_structured_output(Router)
+    # If phase is "done" but there are new messages, start a new workflow
+    if phase == "done":
+        # Check if there's a new user message (restart workflow)
+        if messages and hasattr(messages[-1], "type") and messages[-1].type == "human":
+            logger.info("Supervisor: New user message detected, restarting workflow")
+            return {"next": "Planner", "phase": "planning", "plan": None}
+        else:
+            return {"next": "FINISH"}
 
-    logger.info("Supervisor is deciding the next step...")
-    result = cast(Router, chain.invoke({"messages": messages}))
-    logger.info(f"Supervisor decided: {result.next}")
+    # Phase-based routing (deterministic, no LLM needed for basic flow)
+    if phase == "planning":
+        if plan is not None:
+            # Plan submitted, move to coding phase
+            logger.info("Supervisor: Plan submitted, moving to coding phase")
+            return {"next": "Coder", "phase": "coding"}
+        else:
+            # Still planning
+            return {"next": "Planner"}
 
-    return {"next": result.next}
+    elif phase == "coding":
+        # After Coder finishes, move to review
+        logger.info("Supervisor: Coding done, moving to review phase")
+        return {"next": "Reviewer", "phase": "reviewing"}
+
+    elif phase == "reviewing":
+        # After Reviewer finishes, we're done
+        logger.info("Supervisor: Review done, finishing")
+        return {"next": "FINISH", "phase": "done"}
+
+    else:
+        # Default: start from planning
+        return {"next": "Planner", "phase": "planning"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -173,6 +191,20 @@ def create_multi_agent_graph():
             """
             logger.info(f"[{name}] Starting execution...")
 
+            # For Coder: inject Plan into messages so it knows what to implement
+            if name == "Coder" and state.get("plan"):
+                from langchain_core.messages import SystemMessage
+                plan = state["plan"]
+                plan_text = f"## Plan to Implement\n\nSummary: {plan.summary}\n\nTasks:\n"
+                for task in plan.tasks:
+                    plan_text += f"- Task {task.id}: {task.description}\n"
+                plan_text += "\nImplement these tasks using the available tools. Do NOT create a new plan."
+                
+                # Add plan as a system message
+                plan_msg = SystemMessage(content=plan_text)
+                state = {**state, "messages": list(state["messages"]) + [plan_msg]}
+                logger.info(f"[{name}] Injected plan into messages")
+
             # Track accumulated messages for Plan extraction
             all_new_msgs = []
             num_old_msgs = len(state["messages"])
@@ -186,9 +218,11 @@ def create_multi_agent_graph():
                         logger.debug(f"[{name}/{node_name}] Update received")
 
                         if "messages" in node_output:
-                            # Extract only NEW messages from this update
-                            full_msgs = node_output["messages"]
-                            new_msgs = full_msgs[num_old_msgs:]
+                            # With stream_mode="updates", messages are already incremental updates
+                            # No need to slice - just use them directly
+                            new_msgs = node_output["messages"]
+                            if not isinstance(new_msgs, list):
+                                new_msgs = [new_msgs]
 
                             if new_msgs:
                                 # YIELD update to main graph stream
@@ -197,7 +231,6 @@ def create_multi_agent_graph():
 
                                 # Accumulate for final processing
                                 all_new_msgs.extend(new_msgs)
-                                num_old_msgs = len(full_msgs)
 
             # Final update: Extract Plan if this is Planner
             if name == "Planner":

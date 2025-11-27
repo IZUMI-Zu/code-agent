@@ -157,6 +157,9 @@ class TUIApp:
         progress = show_thinking("Analyzing request")
 
         input_payload = {"messages": [user_message]}
+        
+        # Track rendered message IDs to avoid duplicates
+        rendered_msg_ids = set()
 
         try:
             while True:
@@ -194,9 +197,13 @@ class TUIApp:
                                 elif isinstance(msg, ToolMessage):
                                     continue
 
-                                # Regular AI message - display
+                                # Regular AI message - display (with deduplication)
                                 else:
-                                    render_message(msg)
+                                    # Use message id to deduplicate
+                                    msg_id = getattr(msg, "id", None) or id(msg)
+                                    if msg_id not in rendered_msg_ids:
+                                        rendered_msg_ids.add(msg_id)
+                                        render_message(msg)
 
                             # Update local state
                             self.state["messages"].extend(new_messages)

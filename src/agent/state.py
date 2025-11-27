@@ -49,6 +49,7 @@ class AgentState(TypedDict):
       - current_task: Current task description
       - is_finished: Termination flag (simple boolean, no complex enums)
       - plan: Structured project plan (Optional)
+      - phase: Current workflow phase (planning, coding, reviewing, done)
     """
 
     # Message stream (LangGraph handles appending logic automatically)
@@ -65,6 +66,9 @@ class AgentState(TypedDict):
 
     # Structured Plan
     plan: Optional[Plan]
+
+    # Workflow phase: planning -> coding -> reviewing -> done
+    phase: Literal["planning", "coding", "reviewing", "done"]
 
 
 # ═══════════════════════════════════════════════════════════════
