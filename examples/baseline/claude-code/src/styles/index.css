@@ -1,0 +1,403 @@
+/* ============================================================
+   全局样式 - arXiv CS Daily
+   设计原则：简洁、可读、无冗余
+   ============================================================ */
+
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f8f9fa;
+  --color-border: #dee2e6;
+  --color-text: #212529;
+  --color-text-secondary: #6c757d;
+  --color-primary: #0066cc;
+  --color-primary-hover: #0052a3;
+  --color-success: #28a745;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 1rem;
+  --spacing-md: 1.5rem;
+  --spacing-lg: 2rem;
+  --border-radius: 4px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   首页布局
+   ============================================================ */
+
+.home-page {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+}
+
+.main-content {
+  flex: 1;
+  padding: var(--spacing-lg);
+  max-width: 1200px;
+}
+
+/* ============================================================
+   分类导航
+   ============================================================ */
+
+.category-nav h2 {
+  font-size: 1.2rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-secondary);
+}
+
+.category-nav ul {
+  list-style: none;
+}
+
+.category-nav li {
+  margin-bottom: var(--spacing-xs);
+}
+
+.category-nav button {
+  width: 100%;
+  padding: var(--spacing-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-nav button:hover {
+  background: rgba(0, 102, 204, 0.1);
+}
+
+.category-nav button.active {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.category-code {
+  display: block;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.category-label {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* ============================================================
+   页面头部
+   ============================================================ */
+
+.page-header {
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 2px solid var(--color-border);
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+}
+
+/* ============================================================
+   论文列表
+   ============================================================ */
+
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.paper-item {
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  transition: box-shadow 0.2s;
+}
+
+.paper-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.paper-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.paper-title {
+  flex: 1;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.paper-category {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.paper-authors {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.paper-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.paper-meta time {
+  font-family: 'Courier New', monospace;
+}
+
+/* ============================================================
+   论文详情页
+   ============================================================ */
+
+.paper-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+}
+
+.breadcrumb {
+  margin-bottom: var(--spacing-md);
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.paper-detail-header {
+  margin-bottom: var(--spacing-lg);
+}
+
+.paper-detail-header h1 {
+  font-size: 1.8rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.paper-categories {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+
+.category-tag {
+  padding: 0.25rem 0.5rem;
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.8rem;
+  border-radius: var(--border-radius);
+  font-family: 'Courier New', monospace;
+}
+
+.paper-authors-detail h3 {
+  font-size: 1rem;
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text-secondary);
+}
+
+.paper-authors-detail ul {
+  list-style: none;
+  margin-bottom: var(--spacing-md);
+}
+
+.paper-authors-detail li {
+  padding: 0.25rem 0;
+}
+
+.affiliation {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.paper-dates {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+.paper-dates > div {
+  margin-bottom: 0.25rem;
+}
+
+/* ============================================================
+   论文内容区块
+   ============================================================ */
+
+.paper-abstract,
+.paper-links,
+.paper-citations {
+  margin-bottom: var(--spacing-lg);
+}
+
+.paper-abstract h3,
+.paper-links h3,
+.paper-citations h3 {
+  font-size: 1.2rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.paper-abstract p {
+  line-height: 1.8;
+  text-align: justify;
+}
+
+.links-grid {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.link-button {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-primary);
+  color: white;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.link-button:hover {
+  background: var(--color-primary-hover);
+  text-decoration: none;
+}
+
+/* ============================================================
+   引用工具
+   ============================================================ */
+
+.citation-block {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.citation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.citation-header h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.copy-button {
+  padding: 0.4rem 1rem;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.copy-button:hover {
+  background: var(--color-primary-hover);
+}
+
+.citation-content {
+  padding: var(--spacing-md);
+  background: #f8f9fa;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+.citation-content p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* ============================================================
+   通用状态
+   ============================================================ */
+
+.loading,
+.empty,
+.error {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.error h2 {
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text);
+}
+
+/* ============================================================
+   响应式设计
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .home-page {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .paper-header {
+    flex-direction: column;
+  }
+
+  .links-grid {
+    flex-direction: column;
+  }
+}
