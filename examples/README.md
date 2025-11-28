@@ -19,21 +19,21 @@ The following system prompt was used to generate both projects:
 
 ## Project Comparison
 
-| Dimension             | Code Agent (Claude)          | Code Agent (Qwen)               | Claude Code (Baseline)        |
-| --------------------- | ---------------------------- | ------------------------------- | ----------------------------- |
-| **Tool**              | Code Agent                   | Code Agent                      | Claude Code (Official CLI)    |
-| **Reasoning Model**   | claude-sonnet-4.5            | qwen/qwen3-coder-plus           | claude-sonnet-4.5             |
-| **Lightweight Model** | gpt-4o-mini                  | gpt-4o-mini                     | N/A                           |
-| **Language**          | JavaScript                   | JavaScript                      | TypeScript                    |
-| **Human Interaction** | 3 chat rounds                | 3 rounds + 3 manual adjustments | 2 chat rounds                 |
-| **Manual Fixes**      | 0                            | 3                               | 0                             |
-| **Generation Cost**   | ~$6 USD                      | Lower (open-source model)       | Lower (fewer iterations)      |
-| **CORS Handling**     | Prompted to edit vite.config | Prompted to edit vite.config    | Auto-detected, built-in proxy |
-| **Backend Included**  | No                           | No                              | Yes (Express server)          |
+| Dimension             | Code Agent (Claude)          | Code Agent (Qwen)               | Claude Code         | Gemini CLI          |
+| --------------------- | ---------------------------- | ------------------------------- | ------------------- | ------------------- |
+| **Tool**              | Code Agent                   | Code Agent                      | Claude Code         | gemini-cli          |
+| **Reasoning Model**   | claude-sonnet-4.5            | qwen/qwen3-coder-plus           | claude-sonnet-4.5   | gemini-3-pro        |
+| **Lightweight Model** | gpt-4o-mini                  | gpt-4o-mini                     | N/A                 | gemini-2.5-flash    |
+| **Language**          | JavaScript                   | JavaScript                      | TypeScript          | TypeScript          |
+| **Human Interaction** | 3 chat rounds                | 3 rounds + 3 manual adjustments | 2 chat rounds       | 3 chat rounds       |
+| **Manual Fixes**      | 0                            | 3                               | 0                   | 0                   |
+| **Tool Calls**        | N/A                          | N/A                             | N/A                 | 35 (100% success)   |
+| **Issues Resolved**   | CORS (prompted)              | CORS (prompted)                 | CORS (auto)         | CORS + API params   |
+| **Backend Included**  | No                           | No                              | Yes (Express)       | No                  |
 
 ## Common Features
 
-All three projects implement complete arXiv CS Daily applications:
+All four projects implement complete arXiv CS Daily applications:
 
 ### Core Functionality
 
@@ -73,7 +73,7 @@ npm run dev
 
 Visit `http://localhost:5173`
 
-### 3. Claude Code (Baseline)
+### 3. Claude Code
 
 ```bash
 cd baseline/claude-code
@@ -83,7 +83,17 @@ npm run dev
 
 Visit `http://localhost:5173`
 
-**Note**: Claude Code version includes Express backend proxy for production deployment (`npm start`)
+**Note**: Includes Express backend proxy for production (`npm start`)
+
+### 4. Gemini CLI
+
+```bash
+cd baseline/gemini
+npm install
+npm run dev
+```
+
+Visit `http://localhost:5173`
 
 ## Architecture Differences
 
@@ -168,6 +178,33 @@ src/
 - Backend proxy (server.js) at project root
 - Native CSS without framework dependencies
 
+### Gemini CLI
+
+**Directory Structure**:
+
+```bash
+src/
+├── components/         # UI components with co-located CSS
+│   ├── Layout.tsx/css
+│   ├── Navbar.tsx/css
+│   ├── PaperDetail.tsx/css
+│   └── PaperList.tsx/css
+├── services/          # API integration
+│   └── arxivApi.ts
+├── types/             # TypeScript definitions
+│   └── index.ts
+├── App.tsx/css        # Root component
+└── main.tsx           # Entry point
+```
+
+**Observations**:
+
+- 3 top-level directories in src/
+- Co-located CSS with components
+- React 19.2.0 (latest)
+- Minimal structure, high cohesion
+- Vite proxy configured for CORS
+
 ## Generation Process
 
 ### Agent Workflow
@@ -196,18 +233,21 @@ Delivery Complete
 
 ### Lines of Code
 
-| Version                | Total LOC | JSX/TSX | CSS  | Language   |
-| ---------------------- | --------- | ------- | ---- | ---------- |
-| Code Agent (Claude)    | ~1200     | ~800    | ~400 | JavaScript |
-| Code Agent (Qwen)      | ~1500     | ~1000   | ~500 | JavaScript |
-| Claude Code (Baseline) | ~656      | ~600    | ~56  | TypeScript |
+| Version           | Total LOC | JSX/TSX | CSS  | Language   | React Version |
+| ----------------- | --------- | ------- | ---- | ---------- | ------------- |
+| Code Agent (Claude) | ~1200     | ~800    | ~400 | JavaScript | 19.x          |
+| Code Agent (Qwen)   | ~1500     | ~1000   | ~500 | JavaScript | 19.x          |
+| Claude Code       | ~656      | ~600    | ~56  | TypeScript | 18.x          |
+| Gemini CLI        | ~420      | ~380    | ~40  | TypeScript | 19.2 (latest) |
 
 **Notes**:
 
-- Claude Code version significantly smaller due to:
-  - TypeScript's stricter structure
-  - Fewer auxiliary components
-  - Consolidated logic in services layer
+- Gemini CLI has the smallest codebase:
+  - Co-located CSS reduces file count
+  - Minimal component hierarchy
+  - Direct API integration without abstraction layers
+- Claude Code balances structure and simplicity
+- Code Agent versions include more UI refinements
 
 ## Improvement Opportunities
 
@@ -215,8 +255,9 @@ Delivery Complete
 
 **Status**:
 
-- Code Agent versions: Required explicit prompt to edit vite.config
-- Claude Code: ✅ Auto-detected (Vite proxy + Express backend included)
+- Code Agent: Required explicit prompt to edit vite.config
+- Claude Code: ✅ Auto-detected (Vite proxy + Express backend)
+- Gemini CLI: Agent-detected and resolved (Vite proxy configured)
 
 ### 2. Caching Strategy
 

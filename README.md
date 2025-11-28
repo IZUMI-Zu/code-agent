@@ -16,21 +16,29 @@ A multi-agent code assistant powered by LangGraph, implementing intelligent task
 ### Requirements
 
 - Python >= 3.10
-- OpenAI API Key (or compatible API)
+- [uv](https://docs.astral.sh/uv/) (Python package installer)
+- LLM API Key (OpenAI, DeepSeek, Qwen, or compatible providers)
 
 ### Installation
 
 ```bash
 # ═══════════════════════════════════════════════════════════════
-# 1. Clone repository
+# 1. Install uv (if not already installed)
+# ═══════════════════════════════════════════════════════════════
+curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
+# or
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
+
+# ═══════════════════════════════════════════════════════════════
+# 2. Clone repository
 # ═══════════════════════════════════════════════════════════════
 git clone <repository-url>
 cd code-agent
 
 # ═══════════════════════════════════════════════════════════════
-# 2. Install dependencies
+# 3. Install dependencies
 # ═══════════════════════════════════════════════════════════════
-pip install -e .
+uv sync
 ```
 
 ### Configuration
@@ -41,27 +49,69 @@ Create `.env` file:
 # ═══════════════════════════════════════════════════════════════
 # API Configuration
 # ═══════════════════════════════════════════════════════════════
-OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL_NAME=gpt-4o
-# OPENAI_BASE_URL=https://api.openai.com/v1  # Optional: custom endpoint
+OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1  # Optional: custom endpoint
+
+# ═══════════════════════════════════════════════════════════════
+# Model Configuration (Required)
+# ═══════════════════════════════════════════════════════════════
+REASONING_MODEL=qwen/qwen3-coder-plus              # Main reasoning model
+LIGHTWEIGHT_MODEL=openai/gpt-4o-mini               # Fast task model
 
 # ═══════════════════════════════════════════════════════════════
 # Optional: Web Search
 # ═══════════════════════════════════════════════════════════════
-# BRAVE_API_KEY=your-brave-api-key
-
-# ═══════════════════════════════════════════════════════════════
-# Workspace Security
-# ═══════════════════════════════════════════════════════════════
-WORKSPACE_ROOT=.
-ALLOWED_PATTERNS_FILE=.allowed_patterns
+# BRAVE_API_KEY=your_brave_api_key
 ```
+
+**Supported Model Providers**:
+- OpenAI: `openai/gpt-4o`, `openai/gpt-4o-mini`
+- DeepSeek: `deepseek/deepseek-chat`
+- Qwen: `qwen/qwen3-coder-plus`
+- Any OpenAI-compatible API via `OPENAI_BASE_URL`
 
 ### Run
 
 ```bash
 code-agent
 ```
+
+## Examples
+
+Four implementations of the same project for comparison:
+
+### 1. Code Agent (Claude Sonnet 4.5)
+**Path**: `examples/claude-sonnet-4.5/`
+**Language**: JavaScript | **Iterations**: 3 rounds, 0 fixes
+
+### 2. Code Agent (Qwen3 Coder Plus)
+**Path**: `examples/qwen3-coder-plus/`
+**Language**: JavaScript | **Iterations**: 3 rounds, 3 fixes
+
+### 3. Claude Code
+**Path**: `examples/baseline/claude-code/`
+**Language**: TypeScript | **Iterations**: 2 rounds, 0 fixes
+
+### 4. Gemini CLI
+**Path**: `examples/baseline/gemini/`
+**Language**: TypeScript | **Iterations**: 3 rounds, 0 fixes
+
+### Key Metrics
+
+| Metric | Code Agent | Claude Code | Gemini CLI |
+|--------|-----------|-------------|------------|
+| **Code Size** | 1200-1500 LOC | 656 LOC | 420 LOC |
+| **CORS** | Prompted | Auto + Backend | Auto-detected |
+| **API Issues** | N/A | N/A | Auto-fixed |
+| **React** | 19.x | 18.x | 19.2 |
+
+**Run an example**:
+```bash
+cd examples/baseline/gemini
+npm install && npm run dev
+```
+
+See [`examples/README.md`](examples/README.md) for detailed comparison.
 
 ## Architecture
 
@@ -131,20 +181,6 @@ Simplicity
 ### External Services
 - `brave_search`: Web search (requires API key)
 
-## Workspace Security
-
-Control accessible file patterns via `.allowed_patterns` file:
-
-```
-# Allowed path patterns (supports wildcards)
-src/**
-tests/**
-*.md
-pyproject.toml
-```
-
-Agents can only operate on matching files, preventing accidental system file modifications.
-
 ## Interactive Commands
 
 Available commands in TUI:
@@ -165,6 +201,8 @@ code-agent/
 │   ├── agent/
 │   │   ├── graph.py          # State graph definition
 │   │   ├── state.py          # State models
+│   │   ├── context.py        # Context management
+│   │   ├── structured_output.py  # Output formatting
 │   │   └── human_in_the_loop.py  # Tool confirmation
 │   ├── prompts/
 │   │   ├── agents.py         # Agent system prompts
@@ -181,9 +219,12 @@ code-agent/
 │   │   ├── app.py            # TUI main controller
 │   │   └── components.py     # UI components
 │   ├── utils/
-│   │   └── logger.py         # Logging
+│   │   ├── logger.py         # Logging
+│   │   ├── event_bus.py      # Event system
+│   │   └── path.py           # Path utilities
 │   └── config.py             # Configuration
 ├── pyproject.toml
+├── .env.example
 └── .env
 ```
 
