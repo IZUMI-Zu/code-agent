@@ -1,3 +1,7 @@
+---
+generate with claude-sonnet 4.5 and gpt-4o-mini, with 3 times human chat, cost around 6 usd.
+---
+
 # 📚 arXiv CS Daily
 
 A modern, responsive web application for browsing the latest Computer Science papers from arXiv. Built with React and Vite, featuring a beautiful gradient UI and comprehensive paper details.
