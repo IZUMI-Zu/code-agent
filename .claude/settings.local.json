@@ -11,7 +11,11 @@
       "Bash(test:*)",
       "Bash(\".venv\\Scripts\\python.exe\" -c \"from langgraph.prebuilt import create_react_agent; import inspect; print(inspect.signature(create_react_agent))\")",
       "Bash(.venvScriptspython.exe test_timeout_retry.py)",
-      "Bash(.venv/Scripts/python.exe test_timeout_retry.py)"
+      "Bash(.venv/Scripts/python.exe test_timeout_retry.py)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:langchain-ai.github.io)"
     ],
     "deny": [],
     "ask": []

@@ -68,8 +68,54 @@ def create_worker(name: str, system_prompt: str, tools: list, middleware: list =
     return agent
 
 
-# Get tools
+# ═══════════════════════════════════════════════════════════════
+# Tool Loading (with MCP support)
+# ═══════════════════════════════════════════════════════════════
+# MCP tools are loaded asynchronously on first use
+# This avoids blocking the module import
+
 registry = get_registry()
+
+# MCP server configuration
+# You can customize this in your .env or config file
+MCP_SERVER_CONFIG = {
+    "fetch": {
+        "transport": "stdio",  # 本地进程通信（uvx 服务器）
+        "command": "uvx",
+        "args": ["mcp-server-fetch"]
+    }
+}
+
+
+def _get_tools_for_agent(include_mcp: bool = True):
+    """
+    Get tools for agents (with optional MCP tools)
+
+    Args:
+        include_mcp: Whether to include MCP tools
+
+    Returns:
+        List of LangChain tools
+    """
+    if include_mcp:
+        all_tools = registry.get_all_tools_with_mcp()
+    else:
+        all_tools = registry.get_all_tools()
+
+    # Convert to LangChain tools and wrap with confirmation
+    lc_tools = []
+    for tool in all_tools:
+        if hasattr(tool, "to_langchain_tool"):
+            # Built-in tool
+            lc_tools.append(wrap_tool_with_confirmation(tool.to_langchain_tool()))
+        else:
+            # MCP tool (already a LangChain tool)
+            lc_tools.append(wrap_tool_with_confirmation(tool))
+
+    return lc_tools
+
+
+# Get initial tools (without MCP, loaded synchronously)
 all_tools = registry.get_all_tools()
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
@@ -87,12 +133,16 @@ PLANNER_ALLOWED_TOOLS = {
     "read_file",
     "list_files",
     "path_exists",
+    "grep_search",  # Code search
     # Scaffolding tools (NEW: enables project structure creation)
     "create_directory",  # For directory structure
     "write_file",  # For config files (package.json, requirements.txt, etc.)
     # Planning tools
     "submit_plan",
     "web_search",
+    # MCP tools (if loaded)
+    "fetch",  # From mcp-server-fetch
+    "fetch_html",  # From mcp-server-fetch
 }
 lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
 
@@ -104,6 +154,7 @@ REVIEWER_ALLOWED_TOOLS = {
     "read_file",
     "list_files",
     "path_exists",
+    "grep_search",  # Code search
     "shell",
     "web_search",
 }
@@ -213,21 +264,39 @@ def supervisor_node(state: AgentState):
         )
 
     # ═══════════════════════════════════════════════════════════════
-    # New user message → Reset and route to Planner
+    # New user message → Route to Planner (but preserve context!)
     # ═══════════════════════════════════════════════════════════════
     if is_last_message_from_user():
         user_msg_count = count_user_messages()
         logger.info(
             f"Supervisor: User message #{user_msg_count} detected, routing to Planner"
         )
-        return {
-            "next": "Planner",
-            "phase": "planning",
-            "plan": None,  # Reset plan
-            "iteration_count": 0,  # Reset iteration counter
-            "review_status": "pending",  # Reset review status
-            "issues_found": [],  # Clear issues
-        }
+
+        # CRITICAL: Don't reset plan for follow-up messages!
+        # User might be providing feedback on existing work.
+        # Planner will check workspace and decide if it's a fix or new project.
+        if user_msg_count == 1:
+            # First message: full reset
+            logger.info("Supervisor: First user message, full reset")
+            return {
+                "next": "Planner",
+                "phase": "planning",
+                "plan": None,
+                "iteration_count": 0,
+                "review_status": "pending",
+                "issues_found": [],
+            }
+        else:
+            # Follow-up message: preserve plan, reset iteration
+            logger.info("Supervisor: Follow-up message, preserving plan context")
+            return {
+                "next": "Planner",
+                "phase": "planning",
+                # Keep existing plan (Planner can see what was done before)
+                "iteration_count": 0,  # Reset iteration for new round
+                "review_status": "pending",
+                "issues_found": [],
+            }
 
     # ═══════════════════════════════════════════════════════════════
     # Phase-based routing with feedback loops
@@ -332,11 +401,27 @@ def create_multi_agent_graph():
 
             # For Planner: inject context about the conversation state
             if name == "Planner" and user_msg_count > 1:
+                prev_plan_summary = ""
+                if state.get("plan"):
+                    prev_plan_summary = (
+                        f"\n\nPrevious plan summary: {state['plan'].summary}"
+                    )
+
                 context_text = f"""## Context
 This is message #{user_msg_count} from the user in this conversation.
-The user has previously requested work and is now providing FEEDBACK.
-Focus on addressing their LATEST message - they are likely reporting issues with what was built.
-Use tools (list_files, read_file) to investigate the current state before planning fixes.
+The user has previously requested work and is now providing FEEDBACK.{prev_plan_summary}
+
+MANDATORY WORKFLOW:
+1. FIRST: Use list_files(".") to see what exists in the workspace
+2. THEN: Use read_file() to check current state
+3. FINALLY: Plan INCREMENTAL fixes (not full rebuild!)
+
+The user is likely reporting:
+- Bugs in existing code
+- Missing features
+- Requests for changes
+
+DO NOT rebuild from scratch! Check what exists and plan targeted fixes.
 """
                 context_msg = SystemMessage(content=context_text)
                 state = {**state, "messages": [context_msg] + list(state["messages"])}
@@ -344,19 +429,46 @@ Use tools (list_files, read_file) to investigate the current state before planni
                     f"[{name}] Injected context (user message #{user_msg_count})"
                 )
 
-            # For Coder: inject Plan into messages
+            # For Coder: inject Plan into messages with CRITICAL instructions
             if name == "Coder" and state.get("plan"):
                 plan = state["plan"]
-                plan_text = (
-                    f"## Plan to Implement\n\nSummary: {plan.summary}\n\nTasks:\n"
-                )
+                plan_text = f"""## Plan to Implement
+
+Summary: {plan.summary}
+
+Tasks:
+"""
                 for task in plan.tasks:
                     plan_text += f"- Task {task.id}: {task.description}\n"
-                plan_text += "\nImplement these tasks using the available tools. Do NOT create a new plan."
 
+                plan_text += """
+CRITICAL WORKFLOW (MANDATORY):
+1. BEFORE implementing ANY task, use list_files() to check what exists
+2. Use read_file() to check if work is already done
+3. If a file already exists and looks correct, SKIP that task
+4. Only write/modify files that are missing or incorrect
+5. After completing all NEW work, STOP immediately
+
+WHY THIS MATTERS:
+- Avoid overwriting existing work
+- Detect completed tasks
+- Make minimal, targeted changes
+- Don't repeat yourself!
+
+EXAMPLE:
+Task: "Create Header.jsx"
+Step 1: list_files("src/components/layout/")
+Step 2: If Header.jsx exists, read_file() to check it
+Step 3: If it looks good, SKIP this task
+Step 4: Move to next task
+
+Implement these tasks using the available tools. Do NOT create a new plan.
+"""
                 plan_msg = SystemMessage(content=plan_text)
                 state = {**state, "messages": list(state["messages"]) + [plan_msg]}
-                logger.info(f"[{name}] Injected plan into messages")
+                logger.info(
+                    f"[{name}] Injected plan with anti-duplication instructions"
+                )
 
             # For Reviewer: inject context about what to review
             if name == "Reviewer" and state.get("plan"):
@@ -371,7 +483,7 @@ Tasks completed:
                     review_context += f"- Task {task.id}: {task.description}\n"
                 review_context += """
 Your job is to VERIFY the implementation:
-1. Use list_files to check what files exist in 'playground/' directory
+1. Use list_files(".") to check what files exist in the workspace
 2. Use read_file to examine the code
 3. Use shell to test if the application runs
 4. Report any issues found
@@ -431,7 +543,9 @@ Your job is to VERIFY the implementation:
                                                 )
                                                 continue
                                             return_state["plan"] = plan
-                                            logger.info(f"[{name}] Plan extracted from tool call")
+                                            logger.info(
+                                                f"[{name}] Plan extracted from tool call"
+                                            )
                                     except Exception as e:
                                         logger.error(
                                             f"[{name}] Plan extraction failed: {e}"
@@ -443,7 +557,9 @@ Your job is to VERIFY the implementation:
                 # This is the preferred path - agent stopped immediately after
                 # submit_plan was called, no extra tool calls.
                 # ═══════════════════════════════════════════════════════════════
-                logger.info(f"[{name}] Plan submitted via exception - stopping immediately")
+                logger.info(
+                    f"[{name}] Plan submitted via exception - stopping immediately"
+                )
                 from langchain_core.messages import AIMessage
 
                 # Create a summary message for the conversation
@@ -474,6 +590,7 @@ Your job is to VERIFY the implementation:
                     try:
                         import json
                         import re
+
                         from ..agent.structured_output import ReviewResult
 
                         # ═══════════════════════════════════════════════════════════════
@@ -485,7 +602,9 @@ Your job is to VERIFY the implementation:
                         except json.JSONDecodeError:
                             # Fallback: Extract JSON block using regex
                             # Look for {...} pattern (non-greedy, handles nested braces)
-                            json_match = re.search(r'\{(?:[^{}]|\{[^{}]*\})*\}', content, re.DOTALL)
+                            json_match = re.search(
+                                r"\{(?:[^{}]|\{[^{}]*\})*\}", content, re.DOTALL
+                            )
                             if json_match:
                                 json_str = json_match.group(0)
                                 review_data = json.loads(json_str)
@@ -506,22 +625,29 @@ Your job is to VERIFY the implementation:
                         # Fallback: try old string matching (for backward compatibility)
                         if "REVIEW: PASSED" in content or "REVIEW:PASSED" in content:
                             review_status = "passed"
-                            logger.info(f"[{name}] Fallback: Detected PASSED status via string matching")
+                            logger.info(
+                                f"[{name}] Fallback: Detected PASSED status via string matching"
+                            )
                             break
                         elif (
                             "REVIEW: NEEDS_FIXES" in content
                             or "REVIEW:NEEDS_FIXES" in content
                         ):
                             review_status = "needs_fixes"
-                            logger.info(f"[{name}] Fallback: Detected NEEDS_FIXES status via string matching")
+                            logger.info(
+                                f"[{name}] Fallback: Detected NEEDS_FIXES status via string matching"
+                            )
                             # Try to extract issues (look for numbered list)
                             import re
+
                             issue_matches = re.findall(
                                 r"^\d+\.\s*(.+)$", content, re.MULTILINE
                             )
                             if issue_matches:
                                 issues = issue_matches
-                                logger.info(f"[{name}] Fallback: Extracted {len(issues)} issues")
+                                logger.info(
+                                    f"[{name}] Fallback: Extracted {len(issues)} issues"
+                                )
                             break
 
                 return_state["review_status"] = review_status
@@ -552,6 +678,50 @@ Your job is to VERIFY the implementation:
     workflow.add_edge("Reviewer", "Supervisor")
 
     return workflow.compile(checkpointer=MemorySaver())
+
+
+# ═══════════════════════════════════════════════════════════════
+# Async Initialization (for MCP tools)
+# ═══════════════════════════════════════════════════════════════
+
+
+async def initialize_mcp_tools():
+    """
+    Initialize MCP tools asynchronously
+
+    This should be called once at application startup.
+    After calling this, agents will have access to MCP tools.
+
+    Example:
+        >>> import asyncio
+        >>> asyncio.run(initialize_mcp_tools())
+    """
+    global lc_tools, lc_tools_for_planner, lc_tools_for_coder, lc_tools_for_reviewer
+
+    try:
+        logger.info("Initializing MCP tools...")
+
+        # Load MCP tools
+        await registry.load_mcp_tools(MCP_SERVER_CONFIG)
+
+        # Refresh tool lists
+        lc_tools = _get_tools_for_agent(include_mcp=True)
+
+        # Update agent-specific tool lists
+        lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
+        lc_tools_for_coder = [t for t in lc_tools if t.name != "submit_plan"]
+        lc_tools_for_reviewer = [
+            t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS
+        ]
+
+        logger.info(f"MCP tools initialized. Total tools: {len(lc_tools)}")
+        logger.info(f"  Planner: {len(lc_tools_for_planner)} tools")
+        logger.info(f"  Coder: {len(lc_tools_for_coder)} tools")
+        logger.info(f"  Reviewer: {len(lc_tools_for_reviewer)} tools")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize MCP tools: {e}")
+        logger.warning("Continuing with built-in tools only")
 
 
 # Export global Agent
