@@ -1,9 +1,7 @@
 import axios from 'axios';
 
-// Use Vite proxy in development, direct API in production
-const ARXIV_API_BASE = import.meta.env.DEV 
-  ? '/api/arxiv'  // Vite proxy endpoint
-  : 'https://export.arxiv.org/api/query';  // Direct API for production
+// Use proxy for both dev (Vite) and prod (Vercel) to avoid CORS issues
+const ARXIV_API_BASE = '/api/arxiv';
 
 /**
  * Parse arXiv API XML response to JSON
