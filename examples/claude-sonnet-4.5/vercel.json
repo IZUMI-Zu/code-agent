@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/arxiv",
+      "destination": "https://export.arxiv.org/api/query"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
