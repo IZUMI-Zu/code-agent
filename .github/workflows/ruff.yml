@@ -1,0 +1,33 @@
+name: Ruff
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/ruff.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/ruff.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Run ruff linter
+        run: uvx ruff check --output-format=github .
+
+      - name: Run ruff formatter check
+        run: uvx ruff format --check .
