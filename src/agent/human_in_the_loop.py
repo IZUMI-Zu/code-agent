@@ -1,15 +1,17 @@
 import fnmatch
 import json
+import pathlib
 import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any
 
 from langchain_core.tools import BaseTool
 from langgraph.types import interrupt
 
-from ..config import settings
-from ..utils.event_bus import publish_tool_event
-from ..utils.logger import logger
+from src.config import settings
+from src.utils.event_bus import publish_tool_event
+from src.utils.logger import logger
+
 from .context import get_current_worker
 
 
@@ -17,7 +19,7 @@ class PatternManager:
     """Manages allow patterns for tools."""
 
     def __init__(self):
-        self.patterns: Dict[str, List[str]] = {
+        self.patterns: dict[str, list[str]] = {
             "allow": [],
             "deny": [],
             "ask": [],
@@ -49,21 +51,16 @@ class PatternManager:
             settings.workspace_root.mkdir(parents=True, exist_ok=True)
 
             data = {"permissions": self.patterns}
-            with open(self.pattern_file, "w", encoding="utf-8") as f:
+            with pathlib.Path(self.pattern_file).open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save patterns: {e}")
 
-    def is_allowed(self, tool_name: str, args: Dict[str, Any]) -> bool:
+    def is_allowed(self, tool_name: str, args: dict[str, Any]) -> bool:
         # Check allow patterns
-        for pattern in self.patterns["allow"]:
-            if self._match_pattern(pattern, tool_name, args):
-                return True
-        return False
+        return any(self._match_pattern(pattern, tool_name, args) for pattern in self.patterns["allow"])
 
-    def _match_pattern(
-        self, pattern: str, tool_name: str, args: Dict[str, Any]
-    ) -> bool:
+    def _match_pattern(self, pattern: str, tool_name: str, args: dict[str, Any]) -> bool:
         # Pattern format: "ToolName" or "ToolName(arg_pattern)"
 
         # Simple tool name match
@@ -120,7 +117,7 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
         # But when called via agent, it's usually kwargs.
         base_kwargs = dict(kwargs)
 
-        def _args_preview() -> Dict[str, Any]:
+        def _args_preview() -> dict[str, Any]:
             if base_kwargs:
                 return {k: v for k, v in base_kwargs.items() if k != "config"}
             if args:
@@ -156,19 +153,19 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
                 result = original_func(*args, **call_kwargs)
                 result_preview = str(result)
                 return result
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # ═══════════════════════════════════════════════════════════════
                 # Special handling for control flow exceptions
                 # ═══════════════════════════════════════════════════════════════
                 # PlanSubmittedException is NOT an error - it's a control flow signal
                 # We must re-raise it so the worker_node can catch it
-                from ..tools.planning import PlanSubmittedException
+                from src.tools.planning import PlanSubmittedException
 
                 if isinstance(exc, PlanSubmittedException):
                     # Re-raise control flow exceptions
                     logger.info(f"Tool {tool_name}: Re-raising control flow exception")
                     status = "control_flow"  # Mark as control flow, not error
-                    result_preview = f"Control flow: {str(exc)}"
+                    result_preview = f"Control flow: {exc!s}"
                     raise
 
                 # For real errors, convert to string for agent retry
@@ -236,20 +233,19 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
         action = decision.get("action")
         if action == "approve":
             return _execute("user_approved")
-        elif action == "reject":
+        if action == "reject":
             _emit_rejection("user_rejected")
             reason = decision.get("reason", "")
             if reason:
                 return f"Tool call {tool_name} rejected by user. Reason: {reason}"
             return f"Tool call {tool_name} rejected by user."
-        elif action == "allow_pattern":
+        if action == "allow_pattern":
             # Add pattern and execute
             pattern = decision.get("pattern")
             if pattern:
                 pattern_manager.add_pattern(pattern)
             return _execute("session_allow")
-        else:
-            return f"Unknown decision action: {action}"
+        return f"Unknown decision action: {action}"
 
     # We need to handle both sync and async, but for now we focus on sync _run.
     # IMPORTANT: LangChain tools might expect 'config' in kwargs which is passed by Runnable.

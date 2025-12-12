@@ -1,18 +1,16 @@
 import time
-from typing import Type
 
 import requests
 from pydantic import BaseModel, Field
 
-from ..config import settings
+from src.config import settings
+
 from .base import BaseTool, RetryableError
 
 
 class SearchInput(BaseModel):
     query: str = Field(description="The search query to execute")
-    count: int = Field(
-        default=5, description="Number of results to return (default: 5, max: 20)"
-    )
+    count: int = Field(default=5, description="Number of results to return (default: 5, max: 20)")
 
 
 class BraveSearchTool(BaseTool):
@@ -38,11 +36,7 @@ class BraveSearchTool(BaseTool):
             timeout=30,  # Total timeout for the tool
             max_retries=2,  # Retry on network errors
         )
-        self.api_key = (
-            settings.brave_api_key.get_secret_value()
-            if settings.brave_api_key
-            else None
-        )
+        self.api_key = settings.brave_api_key.get_secret_value() if settings.brave_api_key else None
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
         self.request_timeout = 10  # Per-request timeout
 
@@ -55,7 +49,7 @@ class BraveSearchTool(BaseTool):
             time.sleep(wait_time)
         BraveSearchTool._last_request_time = time.time()
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return SearchInput
 
     def _run(self, query: str, count: int = 5) -> str:
@@ -70,9 +64,7 @@ class BraveSearchTool(BaseTool):
         """
         if not self.api_key:
             # Configuration error - not retryable
-            raise ValueError(
-                "Brave Search API key not configured. Please set BRAVE_API_KEY in .env file."
-            )
+            raise ValueError("Brave Search API key not configured. Please set BRAVE_API_KEY in .env file.")
 
         # Enforce rate limiting before making request
         self._wait_for_rate_limit()
@@ -107,9 +99,7 @@ class BraveSearchTool(BaseTool):
                     title = item.get("title", "No title")
                     url = item.get("url", "No URL")
                     description = item.get("description", "No description")
-                    results.append(
-                        f"Title: {title}\nURL: {url}\nDescription: {description}\n"
-                    )
+                    results.append(f"Title: {title}\nURL: {url}\nDescription: {description}\n")
 
             if not results:
                 return f"No results found for query: {query}"
@@ -118,20 +108,17 @@ class BraveSearchTool(BaseTool):
 
         except requests.exceptions.Timeout:
             # Timeout is retryable
-            raise RetryableError(
-                f"Search request timed out after {self.request_timeout}s"
-            )
+            raise RetryableError(f"Search request timed out after {self.request_timeout}s") from None
         except requests.exceptions.ConnectionError as e:
             # Network connection errors are retryable
-            raise RetryableError(f"Network connection error: {str(e)}")
+            raise RetryableError(f"Network connection error: {e!s}") from e
         except requests.exceptions.RequestException as e:
             # Other request errors (4xx, 5xx) might not be retryable
             # But let's retry 5xx server errors
-            if hasattr(e, "response") and e.response is not None:
-                if 500 <= e.response.status_code < 600:
-                    raise RetryableError(f"Server error {e.response.status_code}: {str(e)}")
+            if hasattr(e, "response") and e.response is not None and 500 <= e.response.status_code < 600:
+                raise RetryableError(f"Server error {e.response.status_code}: {e!s}") from e
             # Client errors (4xx) fail immediately
-            raise RuntimeError(f"Search request failed: {str(e)}")
+            raise RuntimeError(f"Search request failed: {e!s}") from e
         except Exception as e:
             # Unexpected errors fail immediately
-            raise RuntimeError(f"Unexpected error: {str(e)}")
+            raise RuntimeError(f"Unexpected error: {e!s}") from e

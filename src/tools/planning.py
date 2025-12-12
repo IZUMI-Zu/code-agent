@@ -1,10 +1,8 @@
-from typing import Type
-
 from pydantic import BaseModel, Field
 
-from ..agent.state import Plan
-from .base import BaseTool
+from src.agent.state import Plan
 
+from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
 # Custom Exception for Plan Submission
@@ -59,5 +57,5 @@ class SubmitPlanTool(BaseTool):
         # The worker node will catch this and handle it gracefully
         raise PlanSubmittedException(plan)
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return SubmitPlanArgs

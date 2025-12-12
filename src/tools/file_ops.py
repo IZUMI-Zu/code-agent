@@ -9,11 +9,11 @@ Implementation Principles:
 """
 
 from pathlib import Path
-from typing import Optional, Type
 
 from pydantic import BaseModel, Field
 
-from ..utils.path import get_relative_path, resolve_workspace_path
+from src.utils.path import get_relative_path, resolve_workspace_path
+
 from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
@@ -22,11 +22,9 @@ from .base import BaseTool
 
 
 class ReadFileArgs(BaseModel):
-    file_path: str = Field(
-        ..., description="Path to the file to read (absolute or relative)"
-    )
-    start_line: Optional[int] = Field(None, description="Start line number (1-based)")
-    end_line: Optional[int] = Field(None, description="End line number (inclusive)")
+    file_path: str = Field(..., description="Path to the file to read (absolute or relative)")
+    start_line: int | None = Field(None, description="Start line number (1-based)")
+    end_line: int | None = Field(None, description="End line number (inclusive)")
 
 
 class ReadFileTool(BaseTool):
@@ -41,8 +39,8 @@ class ReadFileTool(BaseTool):
     def _run(
         self,
         file_path: str,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> str:
         try:
             path = resolve_workspace_path(file_path)
@@ -84,7 +82,7 @@ class ReadFileTool(BaseTool):
 
         return f"File Content ({len(content)} chars):\n\n{content}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return ReadFileArgs
 
 
@@ -120,7 +118,7 @@ class WriteFileTool(BaseTool):
         path.write_text(content, encoding="utf-8")
         return f"Successfully wrote {len(content)} chars to: {get_relative_path(path)}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return WriteFileArgs
 
 
@@ -131,9 +129,7 @@ class WriteFileTool(BaseTool):
 
 class ListFilesArgs(BaseModel):
     directory: str = Field(".", description="Directory path to list")
-    recursive: bool = Field(
-        False, description="Whether to list subdirectories recursively"
-    )
+    recursive: bool = Field(False, description="Whether to list subdirectories recursively")
     limit: int = Field(100, description="Maximum number of files to return")
 
 
@@ -146,9 +142,7 @@ class ListFilesTool(BaseTool):
             description="List all files and subdirectories in the specified directory.",
         )
 
-    def _run(
-        self, directory: str = ".", recursive: bool = False, limit: int = 100
-    ) -> str:
+    def _run(self, directory: str = ".", recursive: bool = False, limit: int = 100) -> str:
         try:
             path = resolve_workspace_path(directory)
         except ValueError as e:
@@ -206,5 +200,5 @@ class ListFilesTool(BaseTool):
 
         return "\n".join(output)
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return ListFilesArgs

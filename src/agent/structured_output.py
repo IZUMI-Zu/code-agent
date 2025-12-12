@@ -2,7 +2,7 @@
 ═══════════════════════════════════════════════════════════════
 Structured Output Models
 ═══════════════════════════════════════════════════════════════
-强制 Agent 输出结构化数据，避免脆弱的字符串解析
+强制 Agent 输出结构化数据, 避免脆弱的字符串解析
 
 Architecture: Based on Claude Code's best practices
 - Use Pydantic models for type safety
@@ -15,17 +15,14 @@ Benefits:
 - Type-safe data flow
 """
 
+from typing import ClassVar, Literal
+
 from pydantic import BaseModel, Field
-from typing import Literal
 
 
 class ReviewResult(BaseModel):
     """
     Reviewer Agent 的结构化输出
-
-    Replaces fragile string matching:
-    ❌ Old: if "REVIEW: PASSED" in content or "REVIEW:PASSED" in content
-    ✅ New: review_result.status == "passed"
     """
 
     status: Literal["passed", "needs_fixes"]
@@ -40,12 +37,12 @@ class ReviewResult(BaseModel):
     )
     issues: list[str] = Field(
         description="List of issues found (only if status='needs_fixes'). "
-                    "Format: 'file_path:line_number - description'",
+        "Format: 'file_path:line_number - description'",
         default_factory=list,
     )
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: ClassVar[dict] = {
             "examples": [
                 {
                     "status": "passed",
@@ -87,7 +84,7 @@ class CodeReference(BaseModel):
         return f"`{self.file_path}`"
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: ClassVar[dict] = {
             "examples": [
                 {"file_path": "src/agent/graph.py", "line_number": 142},
                 {"file_path": "README.md", "line_number": None},
@@ -97,7 +94,7 @@ class CodeReference(BaseModel):
 
 class TaskProgress(BaseModel):
     """
-    任务进度报告（供 Coder 使用）
+    任务进度报告(供 Coder 使用)
 
     Optional: Coder can report progress for long-running implementations
     """
@@ -118,7 +115,7 @@ class TaskProgress(BaseModel):
     )
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: ClassVar[dict] = {
             "examples": [
                 {
                     "task_id": 2,

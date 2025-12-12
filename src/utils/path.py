@@ -8,7 +8,7 @@ workspace root. Tools should resolve every incoming path through
 
 from pathlib import Path
 
-from ..config import settings
+from src.config import settings
 
 
 def resolve_workspace_path(path_str: str) -> Path:
@@ -23,9 +23,7 @@ def resolve_workspace_path(path_str: str) -> Path:
     try:
         resolved_path.relative_to(workspace_root)
     except ValueError as exc:
-        raise ValueError(
-            f"Access denied: Path {path_str} is outside the workspace"
-        ) from exc
+        raise ValueError(f"Access denied: Path {path_str} is outside the workspace") from exc
 
     return resolved_path
 
@@ -33,7 +31,7 @@ def resolve_workspace_path(path_str: str) -> Path:
 def get_relative_path(absolute_path: Path) -> str:
     """
     Convert an absolute path to a workspace-relative path string.
-    
+
     This hides the actual filesystem location from the agent,
     making it think it's operating in the current directory.
     """

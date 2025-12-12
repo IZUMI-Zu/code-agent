@@ -15,7 +15,6 @@ import time
 import uuid
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Dict, List, Optional
 
 # Internal thread-safe queue shared by publishers/subscribers
 _EVENT_QUEUE: Queue = Queue()
@@ -31,7 +30,7 @@ def _event_log_path() -> Path:
     return log_dir / f"tool_events_{timestamp}.jsonl"
 
 
-def _safe_json_dumps(payload: Dict) -> str:
+def _safe_json_dumps(payload: dict) -> str:
     """Serialize to JSON while keeping output ASCII-only by default."""
     try:
         return json.dumps(payload, ensure_ascii=True)
@@ -43,7 +42,7 @@ def _safe_json_dumps(payload: Dict) -> str:
         return json.dumps(fallback, ensure_ascii=True)
 
 
-def publish_tool_event(event: Dict) -> None:
+def publish_tool_event(event: dict) -> None:
     """Publish a structured tool event to in-memory queue and log file."""
     event.setdefault("event_id", str(uuid.uuid4()))
     event.setdefault("timestamp", time.time())
@@ -55,17 +54,16 @@ def publish_tool_event(event: Dict) -> None:
     try:
         log_path = _event_log_path()
         serialized = _safe_json_dumps(event)
-        with _LOG_WRITE_LOCK:
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(serialized + "\n")
+        with _LOG_WRITE_LOCK, log_path.open("a", encoding="utf-8") as fh:
+            fh.write(serialized + "\n")
     except Exception:
         # Swallow logging errors; runtime visibility should not crash
         pass
 
 
-def drain_tool_events(max_items: Optional[int] = None) -> List[Dict]:
+def drain_tool_events(max_items: int | None = None) -> list[dict]:
     """Return all queued tool events (up to max_items) without blocking."""
-    events: List[Dict] = []
+    events: list[dict] = []
     fetched = 0
     while True:
         if max_items is not None and fetched >= max_items:
@@ -78,4 +76,4 @@ def drain_tool_events(max_items: Optional[int] = None) -> List[Dict]:
     return events
 
 
-__all__ = ["publish_tool_event", "drain_tool_events"]
+__all__ = ["drain_tool_events", "publish_tool_event"]

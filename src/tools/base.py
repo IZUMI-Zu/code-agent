@@ -1,18 +1,10 @@
-"""
-═══════════════════════════════════════════════════════════════
-Tool Base Class - Abstraction to Eliminate Special Cases
-═══════════════════════════════════════════════════════════════
-Design Philosophy:
-  - Good Taste: All tools share a unified interface, no type checking needed
-  - Simplicity: Each tool does one thing only
-  - Pragmatism: Exception handling is cohesive, callers don't need to worry about details
-  - Resilience: Built-in timeout and retry for production reliability
-"""
-
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from typing import Any, Type
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FutureTimeoutError,
+)
+from typing import Any
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
@@ -23,7 +15,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..utils.logger import logger
+from src.utils.logger import logger
 
 # ═══════════════════════════════════════════════════════════════
 # Exception Types
@@ -33,18 +25,9 @@ from ..utils.logger import logger
 class ToolTimeoutError(Exception):
     """Raised when tool execution exceeds timeout"""
 
-    pass
-
 
 class RetryableError(Exception):
     """Base class for errors that should trigger retry"""
-
-    pass
-
-
-# ═══════════════════════════════════════════════════════════════
-# Tool Base Class (Unified Abstraction)
-# ═══════════════════════════════════════════════════════════════
 
 
 class BaseTool(ABC):
@@ -93,7 +76,6 @@ class BaseTool(ABC):
         Returns:
             Execution result string
         """
-        pass
 
     def _run_with_retry(self, **kwargs: Any) -> str:
         """
@@ -108,12 +90,10 @@ class BaseTool(ABC):
         retry_decorator = retry(
             retry=retry_if_exception_type(RetryableError),
             stop=stop_after_attempt(self.max_retries + 1),
-            wait=wait_exponential(
-                min=self.retry_min_wait, max=self.retry_max_wait
-            ),
+            wait=wait_exponential(min=self.retry_min_wait, max=self.retry_max_wait),
             before_sleep=lambda retry_state: logger.warning(
                 f"Tool {self.name} retry {retry_state.attempt_number}/{self.max_retries} "
-                f"after error: {retry_state.outcome.exception()}"
+                f"after error: {retry_state.outcome.exception() if retry_state.outcome else 'Unknown'}"
             ),
         )
 
@@ -189,8 +169,7 @@ class BaseTool(ABC):
         )
 
     @abstractmethod
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         """
         Define tool argument schema (Pydantic Model)
         """
-        pass

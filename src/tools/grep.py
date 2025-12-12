@@ -13,34 +13,28 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ..utils.logger import logger
+from src.utils.logger import logger
+
 from .base import BaseTool
 
 
 class GrepInput(BaseModel):
     """Input schema for grep search"""
 
-    pattern: str = Field(
-        description="Regex pattern to search for (use Rust regex syntax for ripgrep)"
-    )
+    pattern: str = Field(description="Regex pattern to search for (use Rust regex syntax for ripgrep)")
     path: str = Field(
         default=".",
         description="Directory or file to search in (default: current directory)",
     )
-    case_sensitive: bool = Field(
-        default=False, description="Whether search should be case-sensitive"
-    )
-    file_pattern: Optional[str] = Field(
+    case_sensitive: bool = Field(default=False, description="Whether search should be case-sensitive")
+    file_pattern: str | None = Field(
         default=None,
         description="Glob pattern to filter files (e.g., '*.py', '*.js')",
     )
-    max_results: int = Field(
-        default=50, description="Maximum number of results to return"
-    )
+    max_results: int = Field(default=50, description="Maximum number of results to return")
 
 
 class GrepTool(BaseTool):
@@ -95,21 +89,16 @@ Examples:
         has_ripgrep = shutil.which("rg") is not None
 
         if has_ripgrep:
-            return self._ripgrep_search(
-                pattern, path, case_sensitive, file_pattern, max_results
-            )
-        else:
-            logger.warning("ripgrep not found, using Python fallback (slower)")
-            return self._python_grep(
-                pattern, path, case_sensitive, file_pattern, max_results
-            )
+            return self._ripgrep_search(pattern, path, case_sensitive, file_pattern, max_results)
+        logger.warning("ripgrep not found, using Python fallback (slower)")
+        return self._python_grep(pattern, path, case_sensitive, file_pattern, max_results)
 
     def _ripgrep_search(
         self,
         pattern: str,
         path: str,
         case_sensitive: bool,
-        file_pattern: Optional[str],
+        file_pattern: str | None,
         max_results: int,
     ) -> str:
         """Search using ripgrep (fast)"""
@@ -132,12 +121,13 @@ Examples:
         try:
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=30,
                 cwd=os.getcwd(),
-                encoding='utf-8',
-                errors='replace',  # Replace invalid characters instead of failing
+                encoding="utf-8",
+                errors="replace",  # Replace invalid characters instead of failing
             )
 
             if result.returncode == 0:
@@ -149,31 +139,30 @@ Examples:
 
                 # Count matches
                 match_count = len([line for line in output.split("\n") if "--" not in line and line.strip()])
-                
+
                 return f"Found {match_count} matches:\n\n{output}"
 
-            elif result.returncode == 1:
+            if result.returncode == 1:
                 # No matches found
                 return f"No matches found for pattern: {pattern}"
-            else:
-                # Error occurred
-                error = result.stderr
-                if error:
-                    error = error.strip()
-                return f"Search failed: {error if error else 'Unknown error'}"
+            # Error occurred
+            error = result.stderr
+            if error:
+                error = error.strip()
+            return f"Search failed: {error if error else 'Unknown error'}"
 
         except subprocess.TimeoutExpired:
             return "Search timed out (30s limit). Try narrowing your search."
         except Exception as e:
             logger.error(f"ripgrep search failed: {e}")
-            return f"Search failed: {str(e)}"
+            return f"Search failed: {e!s}"
 
     def _python_grep(
         self,
         pattern: str,
         path: str,
         case_sensitive: bool,
-        file_pattern: Optional[str],
+        file_pattern: str | None,
         max_results: int,
     ) -> str:
         """Fallback Python implementation (slower)"""
@@ -191,11 +180,7 @@ Examples:
                 if file_pattern:
                     files = list(search_path.rglob(file_pattern))
                 else:
-                    files = [
-                        f
-                        for f in search_path.rglob("*")
-                        if f.is_file() and not self._should_ignore(f)
-                    ]
+                    files = [f for f in search_path.rglob("*") if f.is_file() and not self._should_ignore(f)]
 
             results = []
             match_count = 0
@@ -205,7 +190,7 @@ Examples:
                     break
 
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(file_path, encoding="utf-8", errors="ignore") as f:
                         lines = f.readlines()
 
                     for i, line in enumerate(lines):
@@ -219,9 +204,7 @@ Examples:
                             end = min(len(lines), i + 3)
                             context = "".join(lines[start:end])
 
-                            results.append(
-                                f"{file_path}:{i+1}:\n{context}\n"
-                            )
+                            results.append(f"{file_path}:{i + 1}:\n{context}\n")
 
                 except Exception as e:
                     logger.debug(f"Skipping {file_path}: {e}")
@@ -237,7 +220,7 @@ Examples:
             return f"Invalid regex pattern: {e}"
         except Exception as e:
             logger.error(f"Python grep failed: {e}")
-            return f"Search failed: {str(e)}"
+            return f"Search failed: {e!s}"
 
     def _should_ignore(self, path: Path) -> bool:
         """Check if path should be ignored"""

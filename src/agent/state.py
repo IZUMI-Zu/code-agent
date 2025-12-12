@@ -8,7 +8,8 @@ Design Philosophy:
   - Simplicity: Store only necessary data, avoid redundancy
 """
 
-from typing import Annotated, List, Literal, Optional, Sequence, TypedDict
+from collections.abc import Sequence
+from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -36,28 +37,22 @@ class Task(BaseModel):
     # ═══════════════════════════════════════════════════════════════
     # Enhanced fields for better task management
     # ═══════════════════════════════════════════════════════════════
-    depends_on: List[int] = Field(
+    depends_on: list[int] = Field(
         default_factory=list,
-        description="IDs of prerequisite tasks that must complete first"
+        description="IDs of prerequisite tasks that must complete first",
     )
-    priority: int = Field(
-        default=0,
-        description="Task priority (higher = more important, range 1-5)"
-    )
-    acceptance_criteria: str = Field(
-        default="",
-        description="How to verify task completion (testable condition)"
-    )
+    priority: int = Field(default=0, description="Task priority (higher = more important, range 1-5)")
+    acceptance_criteria: str = Field(default="", description="How to verify task completion (testable condition)")
     phase: Literal["scaffold", "core", "polish"] = Field(
         default="core",
-        description="Task phase: scaffold (structure), core (features), polish (refinement)"
+        description="Task phase: scaffold (structure), core (features), polish (refinement)",
     )
 
 
 class Plan(BaseModel):
     """Project plan structure"""
 
-    tasks: List[Task] = Field(..., description="List of tasks")
+    tasks: list[Task] = Field(..., description="List of tasks")
     summary: str = Field(..., description="Plan summary")
 
 
@@ -98,7 +93,7 @@ class AgentState(TypedDict):
     is_finished: bool
 
     # Structured Plan
-    plan: Optional[Plan]
+    plan: Plan | None
 
     # Workflow phase: planning -> coding -> reviewing -> done
     phase: Literal["planning", "coding", "reviewing", "done"]
@@ -107,10 +102,10 @@ class AgentState(TypedDict):
     # Feedback Loop Control (LangGraph Best Practice)
     # ═══════════════════════════════════════════════════════════════
     iteration_count: int  # Current iteration number (0-indexed)
-    max_iterations: int   # Safety limit to prevent infinite loops (default: 15)
+    max_iterations: int  # Safety limit to prevent infinite loops (default: 15)
 
     review_status: Literal["pending", "passed", "needs_fixes"]  # Reviewer's verdict
-    issues_found: List[str]  # Specific issues identified by Reviewer
+    issues_found: list[str]  # Specific issues identified by Reviewer
 
 
 # ═══════════════════════════════════════════════════════════════

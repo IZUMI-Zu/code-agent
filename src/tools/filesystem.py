@@ -13,11 +13,11 @@ Good Code vs Bad Code:
 """
 
 import shutil
-from typing import Type
 
 from pydantic import BaseModel, Field
 
-from ..utils.path import get_relative_path, resolve_workspace_path
+from src.utils.path import get_relative_path, resolve_workspace_path
+
 from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
@@ -27,9 +27,7 @@ from .base import BaseTool
 
 class CreateDirectoryArgs(BaseModel):
     path: str = Field(..., description="Path to create")
-    recursive: bool = Field(
-        True, description="Create parent directories if needed (default: True)"
-    )
+    recursive: bool = Field(True, description="Create parent directories if needed (default: True)")
 
 
 class CreateDirectoryTool(BaseTool):
@@ -52,20 +50,19 @@ class CreateDirectoryTool(BaseTool):
         target = resolve_workspace_path(path)
 
         rel_path = get_relative_path(target)
-        
+
         # Check if already exists
         if target.exists():
             if target.is_dir():
                 return f"Directory already exists: {rel_path}"
-            else:
-                raise FileExistsError(f"Path exists but is not a directory: {rel_path}")
+            raise FileExistsError(f"Path exists but is not a directory: {rel_path}")
 
         # Create directory
         target.mkdir(parents=recursive, exist_ok=True)
 
         return f"Created directory: {rel_path}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return CreateDirectoryArgs
 
 
@@ -116,7 +113,7 @@ class CopyFileTool(BaseTool):
 
         return f"Copied {get_relative_path(src)} → {get_relative_path(dst)}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return CopyFileArgs
 
 
@@ -155,15 +152,13 @@ class MoveFileTool(BaseTool):
 
         return f"Moved {get_relative_path(src)} → {get_relative_path(dst)}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return MoveFileArgs
 
 
 class DeletePathArgs(BaseModel):
     path: str = Field(..., description="Path to delete")
-    recursive: bool = Field(
-        False, description="Delete directories recursively (default: False)"
-    )
+    recursive: bool = Field(False, description="Delete directories recursively (default: False)")
 
 
 class DeletePathTool(BaseTool):
@@ -186,7 +181,7 @@ class DeletePathTool(BaseTool):
         target = resolve_workspace_path(path)
 
         rel_path = get_relative_path(target)
-        
+
         if not target.exists():
             raise FileNotFoundError(f"Path not found: {rel_path}")
 
@@ -194,22 +189,18 @@ class DeletePathTool(BaseTool):
         if target.is_file():
             target.unlink()
             return f"Deleted file: {rel_path}"
-        elif target.is_dir():
+        if target.is_dir():
             if recursive:
                 shutil.rmtree(target)
                 return f"Deleted directory (recursive): {rel_path}"
-            else:
-                # Check if empty
-                if any(target.iterdir()):
-                    raise ValueError(
-                        f"Directory not empty. Use recursive=True to delete: {rel_path}"
-                    )
-                target.rmdir()
-                return f"Deleted directory: {rel_path}"
-        else:
-            raise ValueError(f"Unknown path type: {rel_path}")
+            # Check if empty
+            if any(target.iterdir()):
+                raise ValueError(f"Directory not empty. Use recursive=True to delete: {rel_path}")
+            target.rmdir()
+            return f"Deleted directory: {rel_path}"
+        raise ValueError(f"Unknown path type: {rel_path}")
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return DeletePathArgs
 
 
@@ -241,18 +232,17 @@ class PathExistsTool(BaseTool):
         target = resolve_workspace_path(path)
 
         rel_path = get_relative_path(target)
-        
+
         if not target.exists():
             return f"Path does not exist: {rel_path}"
 
         if target.is_file():
             size = target.stat().st_size
             return f"File exists: {rel_path} (size: {size} bytes)"
-        elif target.is_dir():
+        if target.is_dir():
             count = sum(1 for _ in target.iterdir())
             return f"Directory exists: {rel_path} (contains {count} items)"
-        else:
-            return f"Path exists (unknown type): {rel_path}"
+        return f"Path exists (unknown type): {rel_path}"
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return PathExistsArgs

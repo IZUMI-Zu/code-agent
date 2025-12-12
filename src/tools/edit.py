@@ -1,33 +1,12 @@
-"""
-═══════════════════════════════════════════════════════════════
-Precision File Edit Tools
-═══════════════════════════════════════════════════════════════
-Design Philosophy:
-  - Surgical edits over full rewrites (less error-prone)
-  - Token efficient (only send changed parts)
-  - Clear error messages for debugging
-
-Tools:
-  - str_replace: Replace exact string match (Claude Code style)
-  - insert_lines: Insert content at specific line
-  - delete_lines: Delete line range
-  - patch_file: Apply unified diff (advanced)
-"""
-
 import difflib
-import re
-from typing import Optional, Type
+import pathlib
 
 from pydantic import BaseModel, Field
 
-from ..utils.logger import logger
-from ..utils.path import get_relative_path, resolve_workspace_path
+from src.utils.logger import logger
+from src.utils.path import get_relative_path, resolve_workspace_path
+
 from .base import BaseTool
-
-
-# ═══════════════════════════════════════════════════════════════
-# String Replace Tool (Claude Code Style)
-# ═══════════════════════════════════════════════════════════════
 
 
 class StrReplaceArgs(BaseModel):
@@ -45,17 +24,17 @@ class StrReplaceArgs(BaseModel):
 class StrReplaceTool(BaseTool):
     """
     Replace exact string match in a file.
-    
+
     This is the RECOMMENDED way to edit files because:
     1. Precise: Only changes what you specify
     2. Safe: Fails if match is ambiguous (multiple matches)
     3. Efficient: Only sends the changed parts
-    
+
     CRITICAL RULES:
     1. old_str must match EXACTLY (including whitespace, indentation)
     2. old_str must be unique in the file (only one match allowed)
     3. Include enough context to make the match unique
-    
+
     Example:
         old_str: "def hello():\n    print('hi')"
         new_str: "def hello():\n    print('hello world')"
@@ -103,10 +82,7 @@ class StrReplaceTool(BaseTool):
             # Try to find similar matches for helpful error
             similar = self._find_similar(content, old_str)
             if similar:
-                return (
-                    f"Error: old_str not found in {file_path}.\n"
-                    f"Did you mean one of these?\n{similar}"
-                )
+                return f"Error: old_str not found in {file_path}.\nDid you mean one of these?\n{similar}"
             return (
                 f"Error: old_str not found in {file_path}.\n"
                 f"Make sure the string matches exactly, including whitespace and indentation."
@@ -114,10 +90,9 @@ class StrReplaceTool(BaseTool):
 
         if count > 1:
             # Find line numbers of all matches
-            lines = content.split("\n")
             match_lines = []
             search_pos = 0
-            for i in range(count):
+            for _ in range(count):
                 pos = content.find(old_str, search_pos)
                 line_num = content[:pos].count("\n") + 1
                 match_lines.append(line_num)
@@ -143,10 +118,7 @@ class StrReplaceTool(BaseTool):
         pos = content.find(old_str)
         line_num = content[:pos].count("\n") + 1
 
-        logger.info(
-            f"str_replace: {file_path} line {line_num}, "
-            f"{old_lines} lines -> {new_lines} lines"
-        )
+        logger.info(f"str_replace: {file_path} line {line_num}, {old_lines} lines -> {new_lines} lines")
 
         return (
             f"Successfully replaced in {get_relative_path(path)} at line {line_num}.\n"
@@ -175,9 +147,7 @@ class StrReplaceTool(BaseTool):
                 # Show context (line before and after)
                 start = max(0, i - 1)
                 end = min(len(content_lines), i + 2)
-                context = "\n".join(
-                    f"  {j + 1}: {content_lines[j]}" for j in range(start, end)
-                )
+                context = "\n".join(f"  {j + 1}: {content_lines[j]}" for j in range(start, end))
                 similar.append(f"Near line {i + 1}:\n{context}")
 
             if len(similar) >= max_results:
@@ -185,7 +155,7 @@ class StrReplaceTool(BaseTool):
 
         return "\n\n".join(similar)
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return StrReplaceArgs
 
 
@@ -206,13 +176,13 @@ class InsertLinesArgs(BaseModel):
 class InsertLinesTool(BaseTool):
     """
     Insert content at a specific line number.
-    
+
     Use this when you need to ADD new content without replacing existing content.
-    
+
     Example:
         line_number: 10
         content: "# New comment\ndef new_function():\n    pass"
-        
+
         This inserts the content BEFORE line 10.
     """
 
@@ -254,10 +224,7 @@ class InsertLinesTool(BaseTool):
             return f"Error: line_number must be >= 0 (got {line_number})"
 
         if line_number > total_lines + 1:
-            return (
-                f"Error: line_number {line_number} is beyond file end "
-                f"(file has {total_lines} lines)"
-            )
+            return f"Error: line_number {line_number} is beyond file end (file has {total_lines} lines)"
 
         # Insert content
         new_lines = content.split("\n")
@@ -278,17 +245,11 @@ class InsertLinesTool(BaseTool):
         new_content = "\n".join(result_lines)
         path.write_text(new_content, encoding="utf-8")
 
-        logger.info(
-            f"insert_lines: {file_path} at line {line_number}, "
-            f"inserted {len(new_lines)} lines"
-        )
+        logger.info(f"insert_lines: {file_path} at line {line_number}, inserted {len(new_lines)} lines")
 
-        return (
-            f"Successfully inserted {len(new_lines)} lines at line {line_number} "
-            f"in {get_relative_path(path)}."
-        )
+        return f"Successfully inserted {len(new_lines)} lines at line {line_number} in {get_relative_path(path)}."
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return InsertLinesArgs
 
 
@@ -306,23 +267,20 @@ class DeleteLinesArgs(BaseModel):
 class DeleteLinesTool(BaseTool):
     """
     Delete a range of lines from a file.
-    
+
     Use this when you need to REMOVE content without replacing it.
-    
+
     Example:
         start_line: 10
         end_line: 15
-        
+
         This deletes lines 10 through 15 (inclusive).
     """
 
     def __init__(self):
         super().__init__(
             name="delete_lines",
-            description=(
-                "Delete a range of lines from a file. "
-                "Both start_line and end_line are inclusive (1-based)."
-            ),
+            description=("Delete a range of lines from a file. Both start_line and end_line are inclusive (1-based)."),
         )
 
     def _run(self, file_path: str, start_line: int, end_line: int) -> str:
@@ -356,10 +314,7 @@ class DeleteLinesTool(BaseTool):
             return f"Error: end_line ({end_line}) must be >= start_line ({start_line})"
 
         if start_line > total_lines:
-            return (
-                f"Error: start_line {start_line} is beyond file end "
-                f"(file has {total_lines} lines)"
-            )
+            return f"Error: start_line {start_line} is beyond file end (file has {total_lines} lines)"
 
         # Clamp end_line to file length
         end_line = min(end_line, total_lines)
@@ -373,17 +328,11 @@ class DeleteLinesTool(BaseTool):
         path.write_text(new_content, encoding="utf-8")
 
         deleted_count = len(deleted_lines)
-        logger.info(
-            f"delete_lines: {file_path} lines {start_line}-{end_line}, "
-            f"deleted {deleted_count} lines"
-        )
+        logger.info(f"delete_lines: {file_path} lines {start_line}-{end_line}, deleted {deleted_count} lines")
 
-        return (
-            f"Successfully deleted {deleted_count} lines ({start_line}-{end_line}) "
-            f"from {get_relative_path(path)}."
-        )
+        return f"Successfully deleted {deleted_count} lines ({start_line}-{end_line}) from {get_relative_path(path)}."
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return DeleteLinesArgs
 
 
@@ -400,7 +349,7 @@ class AppendFileArgs(BaseModel):
 class AppendFileTool(BaseTool):
     """
     Append content to the end of a file.
-    
+
     Use this when you need to ADD content at the end without reading the whole file.
     Automatically adds a newline before the content if the file doesn't end with one.
     """
@@ -408,10 +357,7 @@ class AppendFileTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="append_file",
-            description=(
-                "Append content to the end of a file. "
-                "Automatically handles newline formatting."
-            ),
+            description=("Append content to the end of a file. Automatically handles newline formatting."),
         )
 
     def _run(self, file_path: str, content: str) -> str:
@@ -439,16 +385,13 @@ class AppendFileTool(BaseTool):
             content = "\n" + content
 
         # Append content
-        with open(path, "a", encoding="utf-8") as f:
+        with pathlib.Path(path).open("a", encoding="utf-8") as f:
             f.write(content)
 
         lines_added = content.count("\n") + (0 if content.endswith("\n") else 1)
         logger.info(f"append_file: {file_path}, appended {lines_added} lines")
 
-        return (
-            f"Successfully appended {len(content)} chars ({lines_added} lines) "
-            f"to {get_relative_path(path)}."
-        )
+        return f"Successfully appended {len(content)} chars ({lines_added} lines) to {get_relative_path(path)}."
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return AppendFileArgs
