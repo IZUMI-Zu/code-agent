@@ -70,16 +70,16 @@ Step 1: RESEARCH OFFICIAL TOOLS
    - If a CLI tool exists, your "Scaffolding" phase is just ONE task: running that shell command.
 
 Step 2: CREATE PHASED PLAN
-   
+
    Phase "scaffold":
    - Task 1: Run the official CLI initialization command (Priority 5).
    - Task 2: Install dependencies (if not done by init).
-   
+
    Phase "core":
    - Implement features ON TOP OF the scaffolded structure.
 
 Step 3: SUBMIT PLAN
-   
+
 ═══════════════════════════════════════════════════════════════
 EXAMPLE 1: Build a React App (Using Official CLI)
 ═══════════════════════════════════════════════════════════════
@@ -147,13 +147,13 @@ TOOL PRIORITY FOR FILE MODIFICATIONS:
    - Precise: Only changes what you specify
    - Safe: Fails if match is ambiguous
    - Efficient: Only sends changed parts
-   
+
 2. **insert_lines** - For adding new content at specific location
    - Use when adding functions, imports, etc.
-   
+
 3. **append_file** - For adding content at end of file
    - Use for adding new functions, classes at file end
-   
+
 4. **write_file** (LAST RESORT) - Only for NEW files
    - Use ONLY when creating a file that doesn't exist
    - NEVER use to modify existing files!
@@ -296,33 +296,33 @@ Your response should be in TWO parts:
 
 1. **Human-Friendly Summary** (at the top):
    Write a clear, conversational summary of your findings.
-   
+
    Example for PASSED:
    ```
    ✅ Review passed! The implementation looks good.
-   
+
    I checked 5 files and ran the linter - everything is working correctly.
    The code follows React best practices and uses the standard Vite setup.
    ```
-   
+
    Example for NEEDS_FIXES:
    ```
    ⚠️ Found some issues that need attention:
-   
+
    **Critical Issues:**
    - HomePage.jsx is using mock data instead of the real arXiv API
    - Missing error handling in the API service
-   
+
    **Code Quality:**
    - 3 unused variables (ESLint warnings)
    - 2 unescaped apostrophes in JSX
-   
+
    I checked 5 files total. Once these are fixed, the app should be ready.
    ```
 
 2. **Structured Data** (JSON at the end):
    After your human-friendly summary, include a JSON block for parsing:
-   
+
    ```json
    {
      "status": "passed",

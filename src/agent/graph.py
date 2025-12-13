@@ -14,22 +14,27 @@ Streaming Design (Best Practice):
   - External stream_mode="messages" captures token-level output
 """
 
+import json
+import re
 from typing import Literal
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from ..config import settings
-from ..prompts import (
+from src.config import settings
+from src.prompts import (
     CODER_PROMPT,
     PLANNER_PROMPT,
     REVIEWER_PROMPT,
 )
-from ..tools.registry import get_registry
-from ..utils.logger import logger
+from src.tools.registry import get_registry
+from src.utils.logger import logger
+
 from .context import worker_context
 from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
@@ -45,11 +50,7 @@ def get_model(task_type: Literal["lightweight", "reasoning"] = "reasoning"):
 
     Performance gain: 3-5x faster for lightweight tasks, 70% cost reduction
     """
-    model_name = (
-        settings.lightweight_model
-        if task_type == "lightweight"
-        else settings.reasoning_model
-    )
+    model_name = settings.lightweight_model if task_type == "lightweight" else settings.reasoning_model
     return ChatOpenAI(
         model=model_name,
         temperature=0,
@@ -59,12 +60,10 @@ def get_model(task_type: Literal["lightweight", "reasoning"] = "reasoning"):
     )
 
 
-def create_worker(name: str, system_prompt: str, tools: list, middleware: list = None):
+def create_worker(name: str, system_prompt: str, tools: list, middleware: list | None = None):
     """Create a Worker Agent"""
     model = get_model()
-    agent = create_agent(
-        model, tools, system_prompt=system_prompt, middleware=middleware or []
-    )
+    agent = create_agent(model, tools, system_prompt=system_prompt, middleware=middleware or [])
     return agent
 
 
@@ -80,9 +79,9 @@ registry = get_registry()
 # You can customize this in your .env or config file
 MCP_SERVER_CONFIG = {
     "fetch": {
-        "transport": "stdio",  # 本地进程通信（uvx 服务器）
+        "transport": "stdio",  # 本地进程通信(uvx 服务器)
         "command": "uvx",
-        "args": ["mcp-server-fetch"]
+        "args": ["mcp-server-fetch"],
     }
 }
 
@@ -97,20 +96,20 @@ def _get_tools_for_agent(include_mcp: bool = True):
     Returns:
         List of LangChain tools
     """
-    if include_mcp:
-        all_tools = registry.get_all_tools_with_mcp()
-    else:
-        all_tools = registry.get_all_tools()
+    all_tools = registry.get_all_tools_with_mcp() if include_mcp else registry.get_all_tools()
 
     # Convert to LangChain tools and wrap with confirmation
     lc_tools = []
     for tool in all_tools:
         if hasattr(tool, "to_langchain_tool"):
             # Built-in tool
-            lc_tools.append(wrap_tool_with_confirmation(tool.to_langchain_tool()))
+            lc_tool = tool.to_langchain_tool()
+            lc_tools.append(wrap_tool_with_confirmation(lc_tool))
         else:
             # MCP tool (already a LangChain tool)
-            lc_tools.append(wrap_tool_with_confirmation(tool))
+            # Type assertion: we know MCP tools are BaseTool instances
+            if isinstance(tool, BaseTool):
+                lc_tools.append(wrap_tool_with_confirmation(tool))
 
     return lc_tools
 
@@ -165,7 +164,6 @@ lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS
 # ═══════════════════════════════════════════════════════════════
 # Auto-summarize old messages when conversation gets too long
 # Reference: https://docs.langchain.com/oss/python/langchain/middleware/built-in
-from langchain.agents.middleware import SummarizationMiddleware
 
 # Create model instance for summarization (use lightweight model)
 summarization_model = get_model("lightweight")
@@ -183,22 +181,16 @@ summarization = SummarizationMiddleware(
 # Workflow control is now handled by state + supervisor routing
 # Per LangGraph docs: middleware is for cross-cutting concerns, NOT workflow logic
 # ADDED: SummarizationMiddleware (proper use case - cross-cutting concern)
-planner_agent = create_worker(
-    "Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=[summarization]
-)
-coder_agent = create_worker(
-    "Coder", CODER_PROMPT, lc_tools_for_coder, middleware=[summarization]
-)
-reviewer_agent = create_worker(
-    "Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer, middleware=[summarization]
-)
+planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=[summarization])
+coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_for_coder, middleware=[summarization])
+reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer, middleware=[summarization])
 
 logger.info(f"Planner tools: {[t.name for t in lc_tools_for_planner]}")
 logger.info(f"Coder tools: {[t.name for t in lc_tools_for_coder]}")
 logger.info(f"Reviewer tools: {[t.name for t in lc_tools_for_reviewer]}")
 
 members = ["Planner", "Coder", "Reviewer"]
-options = ["FINISH"] + members
+options = ["FINISH", *members]
 
 
 class Router(BaseModel):
@@ -225,9 +217,7 @@ def supervisor_node(state: AgentState):
     max_iterations = state.get("max_iterations", 15)
     review_status = state.get("review_status", "pending")
 
-    logger.info(
-        f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}"
-    )
+    logger.info(f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}")
 
     # ═══════════════════════════════════════════════════════════════
     # Helper functions
@@ -238,16 +228,12 @@ def supervisor_node(state: AgentState):
         last_msg = messages[-1]
         if hasattr(last_msg, "type") and last_msg.type == "human":
             return True
-        if last_msg.__class__.__name__ == "HumanMessage":
-            return True
-        return False
+        return last_msg.__class__.__name__ == "HumanMessage"
 
     def count_user_messages():
         count = 0
         for msg in messages:
-            if hasattr(msg, "type") and msg.type == "human":
-                count += 1
-            elif msg.__class__.__name__ == "HumanMessage":
+            if (hasattr(msg, "type") and msg.type == "human") or msg.__class__.__name__ == "HumanMessage":
                 count += 1
         return count
 
@@ -268,9 +254,7 @@ def supervisor_node(state: AgentState):
     # ═══════════════════════════════════════════════════════════════
     if is_last_message_from_user():
         user_msg_count = count_user_messages()
-        logger.info(
-            f"Supervisor: User message #{user_msg_count} detected, routing to Planner"
-        )
+        logger.info(f"Supervisor: User message #{user_msg_count} detected, routing to Planner")
 
         # CRITICAL: Don't reset plan for follow-up messages!
         # User might be providing feedback on existing work.
@@ -286,17 +270,16 @@ def supervisor_node(state: AgentState):
                 "review_status": "pending",
                 "issues_found": [],
             }
-        else:
-            # Follow-up message: preserve plan, reset iteration
-            logger.info("Supervisor: Follow-up message, preserving plan context")
-            return {
-                "next": "Planner",
-                "phase": "planning",
-                # Keep existing plan (Planner can see what was done before)
-                "iteration_count": 0,  # Reset iteration for new round
-                "review_status": "pending",
-                "issues_found": [],
-            }
+        # Follow-up message: preserve plan, reset iteration
+        logger.info("Supervisor: Follow-up message, preserving plan context")
+        return {
+            "next": "Planner",
+            "phase": "planning",
+            # Keep existing plan (Planner can see what was done before)
+            "iteration_count": 0,  # Reset iteration for new round
+            "review_status": "pending",
+            "issues_found": [],
+        }
 
     # ═══════════════════════════════════════════════════════════════
     # Phase-based routing with feedback loops
@@ -305,11 +288,10 @@ def supervisor_node(state: AgentState):
         if plan is not None:
             logger.info("Supervisor: Plan submitted, moving to coding phase")
             return {"next": "Coder", "phase": "coding"}
-        else:
-            logger.info("Supervisor: Planning complete without plan, finishing")
-            return {"next": "FINISH", "phase": "done"}
+        logger.info("Supervisor: Planning complete without plan, finishing")
+        return {"next": "FINISH", "phase": "done"}
 
-    elif phase == "coding":
+    if phase == "coding":
         logger.info("Supervisor: Coding done, moving to review phase")
         return {
             "next": "Reviewer",
@@ -317,39 +299,35 @@ def supervisor_node(state: AgentState):
             "review_status": "pending",  # Reset review status before review
         }
 
-    elif phase == "reviewing":
+    if phase == "reviewing":
         # ═══════════════════════════════════════════════════════════════
         # CRITICAL: Feedback loop implementation
         # Check Reviewer's verdict and decide whether to iterate
         # ═══════════════════════════════════════════════════════════════
         if review_status == "needs_fixes":
-            logger.info(
-                "Supervisor: Review FAILED, routing back to Coder (feedback loop)"
-            )
+            logger.info("Supervisor: Review FAILED, routing back to Coder (feedback loop)")
             return {
                 "next": "Coder",
                 "phase": "coding",
                 "iteration_count": iteration_count + 1,  # Increment iteration
             }
-        elif review_status == "passed":
+        if review_status == "passed":
             logger.info("Supervisor: Review PASSED, finishing")
             return {"next": "FINISH", "phase": "done"}
-        else:
-            # review_status is "pending" - this shouldn't happen!
-            # Log warning and route back to Reviewer for re-review
-            logger.warning(
-                f"Supervisor: Review status is 'pending' after Reviewer execution. "
-                f"This indicates a parsing failure. Finishing anyway to avoid infinite loop."
-            )
-            return {"next": "FINISH", "phase": "done"}
+        # review_status is "pending" - this shouldn't happen!
+        # Log warning and route back to Reviewer for re-review
+        logger.warning(
+            "Supervisor: Review status is 'pending' after Reviewer execution. "
+            "This indicates a parsing failure. Finishing anyway to avoid infinite loop."
+        )
+        return {"next": "FINISH", "phase": "done"}
 
-    elif phase == "done":
+    if phase == "done":
         return {"next": "FINISH"}
 
-    else:
-        # Unknown phase, route to Planner as fallback
-        logger.warning(f"Supervisor: Unknown phase '{phase}', routing to Planner")
-        return {"next": "Planner", "phase": "planning"}
+    # Unknown phase, route to Planner as fallback
+    logger.warning(f"Supervisor: Unknown phase '{phase}', routing to Planner")
+    return {"next": "Planner", "phase": "planning"}
 
 
 def create_multi_agent_graph():
@@ -395,17 +373,15 @@ def create_multi_agent_graph():
             user_msg_count = sum(
                 1
                 for msg in state.get("messages", [])
-                if (hasattr(msg, "type") and msg.type == "human")
-                or msg.__class__.__name__ == "HumanMessage"
+                if (hasattr(msg, "type") and msg.type == "human") or msg.__class__.__name__ == "HumanMessage"
             )
 
             # For Planner: inject context about the conversation state
             if name == "Planner" and user_msg_count > 1:
                 prev_plan_summary = ""
-                if state.get("plan"):
-                    prev_plan_summary = (
-                        f"\n\nPrevious plan summary: {state['plan'].summary}"
-                    )
+                plan = state.get("plan")
+                if plan:
+                    prev_plan_summary = f"\n\nPrevious plan summary: {plan.summary}"
 
                 context_text = f"""## Context
 This is message #{user_msg_count} from the user in this conversation.
@@ -424,14 +400,12 @@ The user is likely reporting:
 DO NOT rebuild from scratch! Check what exists and plan targeted fixes.
 """
                 context_msg = SystemMessage(content=context_text)
-                state = {**state, "messages": [context_msg] + list(state["messages"])}
-                logger.info(
-                    f"[{name}] Injected context (user message #{user_msg_count})"
-                )
+                state = {**state, "messages": [context_msg, *list(state["messages"])]}
+                logger.info(f"[{name}] Injected context (user message #{user_msg_count})")
 
             # For Coder: inject Plan into messages with CRITICAL instructions
-            if name == "Coder" and state.get("plan"):
-                plan = state["plan"]
+            plan = state.get("plan")
+            if name == "Coder" and plan:
                 plan_text = f"""## Plan to Implement
 
 Summary: {plan.summary}
@@ -465,14 +439,12 @@ Step 4: Move to next task
 Implement these tasks using the available tools. Do NOT create a new plan.
 """
                 plan_msg = SystemMessage(content=plan_text)
-                state = {**state, "messages": list(state["messages"]) + [plan_msg]}
-                logger.info(
-                    f"[{name}] Injected plan with anti-duplication instructions"
-                )
+                state = {**state, "messages": [*list(state["messages"]), plan_msg]}
+                logger.info(f"[{name}] Injected plan with anti-duplication instructions")
 
             # For Reviewer: inject context about what to review
-            if name == "Reviewer" and state.get("plan"):
-                plan = state["plan"]
+            plan = state.get("plan")
+            if name == "Reviewer" and plan:
                 review_context = f"""## Review Context
 The Coder just implemented the following plan:
 Summary: {plan.summary}
@@ -489,7 +461,7 @@ Your job is to VERIFY the implementation:
 4. Report any issues found
 """
                 review_msg = SystemMessage(content=review_context)
-                state = {**state, "messages": list(state["messages"]) + [review_msg]}
+                state = {**state, "messages": [*list(state["messages"]), review_msg]}
                 logger.info(f"[{name}] Injected review context")
 
             # ═══════════════════════════════════════════════════════════════
@@ -502,7 +474,7 @@ Your job is to VERIFY the implementation:
             # Reference: LangGraph docs recommend using exceptions for
             # immediate termination of agent loops.
             # ═══════════════════════════════════════════════════════════════
-            from ..tools.planning import PlanSubmittedException
+            from src.tools.planning import PlanSubmittedException
 
             try:
                 with worker_context(name):
@@ -534,22 +506,14 @@ Your job is to VERIFY the implementation:
                                                 plan = Plan(**plan_data)
                                             elif isinstance(plan_data, str):
                                                 # Try to parse as JSON
-                                                import json
-
                                                 plan = Plan(**json.loads(plan_data))
                                             else:
-                                                logger.error(
-                                                    f"[{name}] Unknown plan_data type: {type(plan_data)}"
-                                                )
+                                                logger.error(f"[{name}] Unknown plan_data type: {type(plan_data)}")
                                                 continue
-                                            return_state["plan"] = plan
-                                            logger.info(
-                                                f"[{name}] Plan extracted from tool call"
-                                            )
+                                            return_state["plan"] = plan  # type: ignore  # noqa: PGH003
+                                            logger.info(f"[{name}] Plan extracted from tool call")
                                     except Exception as e:
-                                        logger.error(
-                                            f"[{name}] Plan extraction failed: {e}"
-                                        )
+                                        logger.error(f"[{name}] Plan extraction failed: {e}")
 
             except PlanSubmittedException as e:
                 # ═══════════════════════════════════════════════════════════════
@@ -557,9 +521,7 @@ Your job is to VERIFY the implementation:
                 # This is the preferred path - agent stopped immediately after
                 # submit_plan was called, no extra tool calls.
                 # ═══════════════════════════════════════════════════════════════
-                logger.info(
-                    f"[{name}] Plan submitted via exception - stopping immediately"
-                )
+                logger.info(f"[{name}] Plan submitted via exception - stopping immediately")
                 from langchain_core.messages import AIMessage
 
                 # Create a summary message for the conversation
@@ -588,10 +550,7 @@ Your job is to VERIFY the implementation:
 
                     # Try to parse as JSON (structured output)
                     try:
-                        import json
-                        import re
-
-                        from ..agent.structured_output import ReviewResult
+                        from src.agent.structured_output import ReviewResult
 
                         # ═══════════════════════════════════════════════════════════════
                         # Extract JSON from content (LLM might add extra text)
@@ -602,14 +561,12 @@ Your job is to VERIFY the implementation:
                         except json.JSONDecodeError:
                             # Fallback: Extract JSON block using regex
                             # Look for {...} pattern (non-greedy, handles nested braces)
-                            json_match = re.search(
-                                r"\{(?:[^{}]|\{[^{}]*\})*\}", content, re.DOTALL
-                            )
+                            json_match = re.search(r"\{(?:[^{}]|\{[^{}]*\})*\}", content, re.DOTALL)
                             if json_match:
                                 json_str = json_match.group(0)
                                 review_data = json.loads(json_str)
                             else:
-                                raise json.JSONDecodeError("No JSON found", content, 0)
+                                raise json.JSONDecodeError("No JSON found", content, 0) from None
 
                         review_result = ReviewResult(**review_data)
 
@@ -621,38 +578,25 @@ Your job is to VERIFY the implementation:
                             f"issues={len(issues)}, files_checked={len(review_result.files_checked)}"
                         )
                         break
-                    except (json.JSONDecodeError, Exception) as e:
+                    except (json.JSONDecodeError, Exception):
                         # Fallback: try old string matching (for backward compatibility)
                         if "REVIEW: PASSED" in content or "REVIEW:PASSED" in content:
                             review_status = "passed"
-                            logger.info(
-                                f"[{name}] Fallback: Detected PASSED status via string matching"
-                            )
+                            logger.info(f"[{name}] Fallback: Detected PASSED status via string matching")
                             break
-                        elif (
-                            "REVIEW: NEEDS_FIXES" in content
-                            or "REVIEW:NEEDS_FIXES" in content
-                        ):
+                        if "REVIEW: NEEDS_FIXES" in content or "REVIEW:NEEDS_FIXES" in content:
                             review_status = "needs_fixes"
-                            logger.info(
-                                f"[{name}] Fallback: Detected NEEDS_FIXES status via string matching"
-                            )
+                            logger.info(f"[{name}] Fallback: Detected NEEDS_FIXES status via string matching")
                             # Try to extract issues (look for numbered list)
-                            import re
-
-                            issue_matches = re.findall(
-                                r"^\d+\.\s*(.+)$", content, re.MULTILINE
-                            )
+                            issue_matches = re.findall(r"^\d+\.\s*(.+)$", content, re.MULTILINE)
                             if issue_matches:
                                 issues = issue_matches
-                                logger.info(
-                                    f"[{name}] Fallback: Extracted {len(issues)} issues"
-                                )
+                                logger.info(f"[{name}] Fallback: Extracted {len(issues)} issues")
                             break
 
-                return_state["review_status"] = review_status
+                return_state["review_status"] = review_status  # type: ignore  # noqa: PGH003
                 if issues:
-                    return_state["issues_found"] = issues
+                    return_state["issues_found"] = issues  # type: ignore  # noqa: PGH003
 
             logger.info(f"[{name}] Completed with {len(new_messages)} messages")
             return return_state
@@ -710,9 +654,7 @@ async def initialize_mcp_tools():
         # Update agent-specific tool lists
         lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
         lc_tools_for_coder = [t for t in lc_tools if t.name != "submit_plan"]
-        lc_tools_for_reviewer = [
-            t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS
-        ]
+        lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
 
         logger.info(f"MCP tools initialized. Total tools: {len(lc_tools)}")
         logger.info(f"  Planner: {len(lc_tools_for_planner)} tools")

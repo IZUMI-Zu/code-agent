@@ -9,13 +9,13 @@ Design Philosophy:
   - MCP Integration (Load tools from MCP servers)
 """
 
-import asyncio
-from typing import Dict, List, Optional
+from langchain_core.tools import (
+    BaseTool as LangChainBaseTool,
+    StructuredTool,
+)
 
-from langchain_core.tools import BaseTool as LangChainBaseTool
-from langchain_core.tools import StructuredTool
+from src.utils.logger import logger
 
-from ..utils.logger import logger
 from .base import BaseTool
 from .edit import (
     AppendFileTool,
@@ -52,8 +52,8 @@ class ToolRegistry:
     """
 
     def __init__(self):
-        self._tools: Dict[str, BaseTool] = {}
-        self._mcp_tools: List[LangChainBaseTool] = []
+        self._tools: dict[str, BaseTool] = {}
+        self._mcp_tools: list[LangChainBaseTool] = []
         self._mcp_loaded: bool = False
         self._register_default_tools()
 
@@ -72,12 +72,12 @@ class ToolRegistry:
             WriteFileTool(),
             ListFilesTool(),
             # Code Search
-            GrepTool(),            # Fast code search with ripgrep
+            GrepTool(),  # Fast code search with ripgrep
             # Precision Edit Tools (RECOMMENDED for modifications)
-            StrReplaceTool(),      # Replace exact string match
-            InsertLinesTool(),     # Insert at specific line
-            DeleteLinesTool(),     # Delete line range
-            AppendFileTool(),      # Append to end of file
+            StrReplaceTool(),  # Replace exact string match
+            InsertLinesTool(),  # Insert at specific line
+            DeleteLinesTool(),  # Delete line range
+            AppendFileTool(),  # Append to end of file
             # Filesystem Operations (Cross-platform)
             CreateDirectoryTool(),
             CopyFileTool(),
@@ -104,9 +104,7 @@ class ToolRegistry:
         """Get tool (Raise explicit exception if not found)"""
         if name not in self._tools:
             available = ", ".join(self._tools.keys())
-            raise KeyError(
-                f"Tool '{name}' not registered. Available tools: {available}"
-            )
+            raise KeyError(f"Tool '{name}' not registered. Available tools: {available}")
         return self._tools[name]
 
     def list_all(self) -> list[BaseTool]:
@@ -116,15 +114,15 @@ class ToolRegistry:
     def get_all_tools(self) -> list[BaseTool]:
         """Get all registered tools (Alias)"""
         return self.list_all()
-    
-    async def load_mcp_tools(self, server_configs: Optional[Dict] = None):
+
+    async def load_mcp_tools(self, server_configs: dict | None = None):
         """
         Load tools from MCP servers
-        
+
         Args:
             server_configs: Optional MCP server configurations
                            If None, uses default config (fetch server)
-        
+
         Note:
             - Only loads once (cached)
             - Call reload_mcp_tools() to refresh
@@ -132,43 +130,40 @@ class ToolRegistry:
         if self._mcp_loaded:
             logger.info("MCP tools already loaded (using cache)")
             return
-        
+
         try:
             from .mcp_loader import load_mcp_tools
-            
+
             logger.info("Loading MCP tools...")
             self._mcp_tools = await load_mcp_tools(server_configs)
             self._mcp_loaded = True
-            
+
             logger.info(f"Loaded {len(self._mcp_tools)} MCP tools")
-            
+
         except ImportError:
-            logger.warning(
-                "langchain-mcp-adapters not installed. "
-                "Install with: uv add langchain-mcp-adapters"
-            )
+            logger.warning("langchain-mcp-adapters not installed. Install with: uv add langchain-mcp-adapters")
         except Exception as e:
             logger.error(f"Failed to load MCP tools: {e}")
             logger.warning("Continuing without MCP tools")
-    
-    async def reload_mcp_tools(self, server_configs: Optional[Dict] = None):
+
+    async def reload_mcp_tools(self, server_configs: dict | None = None):
         """
         Reload MCP tools (clears cache)
-        
+
         Args:
             server_configs: Optional MCP server configurations
         """
         self._mcp_loaded = False
         self._mcp_tools = []
         await self.load_mcp_tools(server_configs)
-    
-    def get_all_tools_with_mcp(self) -> List:
+
+    def get_all_tools_with_mcp(self) -> list:
         """
         Get all tools including MCP tools
-        
+
         Returns:
             List of all tools (built-in + MCP)
-            
+
         Note:
             - MCP tools must be loaded first with load_mcp_tools()
             - Returns only built-in tools if MCP not loaded
@@ -189,17 +184,17 @@ class ToolRegistry:
             },
             ...
         ]
-        
+
         Note:
             - Only returns built-in tools
             - Use get_tool_descriptions_with_mcp() for MCP tools
         """
         return [tool.to_langchain_tool() for tool in self._tools.values()]
-    
-    def get_tool_descriptions_with_mcp(self) -> List:
+
+    def get_tool_descriptions_with_mcp(self) -> list:
         """
         Get descriptions of all tools including MCP tools
-        
+
         Returns:
             List of all tool descriptions (built-in + MCP)
         """
