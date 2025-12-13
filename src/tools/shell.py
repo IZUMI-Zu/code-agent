@@ -1,112 +1,121 @@
-"""
-═══════════════════════════════════════════════════════════════
-Shell Command Execution Tool
-═══════════════════════════════════════════════════════════════
-Security Design:
-  - Timeout limits (prevent zombie processes)
-  - Capture stderr (provide full diagnostic info)
-  - Explicit working directory (avoid path confusion)
-
-Design Philosophy:
-  - Shell is for ADVANCED operations (git, npm, compilers, etc.)
-  - For basic filesystem ops, use dedicated cross-platform tools
-  - Keep raw power available, but warn about alternatives
-  - Real-time output streaming (Claude Code style)
-  - Smart error messages with platform-specific command suggestions
-"""
-
+import atexit
+import collections
+import os
 import platform
 import re
 import subprocess
 import threading
 import time
-from typing import Type
+from pathlib import Path
+from typing import Literal
 
+import psutil
 from pydantic import BaseModel, Field
 
-from ..utils.event_bus import publish_tool_event
-from ..utils.path import get_relative_path, resolve_workspace_path
+from src.config import settings  # Import settings for workspace_root
+from src.utils.event_bus import publish_tool_event
+from src.utils.logger import logger
+from src.utils.path import get_relative_path, resolve_workspace_path
+
 from .base import BaseTool
 
 # ═══════════════════════════════════════════════════════════════
-# Platform Command Mapping (Linux -> Windows)
-# ═══════════════════════════════════════════════════════════════
-LINUX_TO_WINDOWS_COMMANDS = {
-    "ls": "dir",
-    "ls -la": "dir",
-    "ls -l": "dir",
-    "ls -a": "dir /a",
-    "cat": "type",
-    "rm": "del",
-    "rm -rf": "rmdir /s /q",
-    "rm -r": "rmdir /s /q",
-    "cp": "copy",
-    "cp -r": "xcopy /s /e",
-    "mv": "move",
-    "mkdir -p": "mkdir",
-    "touch": "type nul >",
-    "pwd": "cd",
-    "clear": "cls",
-    "grep": "findstr",
-    "head": "more",
-    "tail": "more",
-    "wc -l": 'find /c /v ""',
-    "echo -e": "echo",
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Helper Functions
+# Global Process Registry
 # ═══════════════════════════════════════════════════════════════
 
 
-def suggest_windows_command(failed_command: str, error_msg: str) -> str:
+class ProcessInfo(BaseModel):
+    pid: int
+    command: str
+    log_file: str
+    start_time: float
+    status: str = "running"
+
+
+class ProcessRegistry:
     """
-    Analyze a failed command and suggest Windows equivalent.
-    Returns suggestion string or empty string if no suggestion.
+    Tracks processes started by the agent to ensure they can be managed and cleaned up.
     """
-    if platform.system() != "Windows":
-        return ""
 
-    # Check if error indicates command not found
-    not_found_patterns = [
-        "不是内部或外部命令",  # Chinese: not internal or external command
-        "is not recognized",
-        "command not found",
-        "not found",
-    ]
+    def __init__(self):
+        self._processes: dict[int, ProcessInfo] = {}
+        # Register cleanup on exit
+        atexit.register(self.cleanup_all)
 
-    is_command_not_found = any(
-        p in error_msg.lower() or p in error_msg for p in not_found_patterns
-    )
-    if not is_command_not_found:
-        return ""
+    def register(self, pid: int, command: str, log_file: str):
+        """Register a new background process"""
+        self._processes[pid] = ProcessInfo(
+            pid=pid,
+            command=command,
+            log_file=str(log_file),
+            start_time=time.time(),
+        )
+        logger.info(f"Registered process PID {pid}: {command}")
 
-    # Extract the base command (first word)
-    parts = failed_command.strip().split()
-    if not parts:
-        return ""
+    def get_active_processes(self) -> list[ProcessInfo]:
+        """Get list of processes that are actually running"""
+        active = []
+        dead_pids = []
 
-    base_cmd = parts[0]
+        for pid, info in self._processes.items():
+            if psutil.pid_exists(pid):
+                try:
+                    p = psutil.Process(pid)
+                    if p.status() != psutil.STATUS_ZOMBIE:
+                        info.status = p.status()
+                        active.append(info)
+                    else:
+                        dead_pids.append(pid)
+                except psutil.NoSuchProcess:
+                    dead_pids.append(pid)
+            else:
+                dead_pids.append(pid)
 
-    # Check for direct mapping
-    if base_cmd in LINUX_TO_WINDOWS_COMMANDS:
-        win_cmd = LINUX_TO_WINDOWS_COMMANDS[base_cmd]
-        # Try to construct full Windows command
-        if len(parts) > 1:
-            args = " ".join(parts[1:])
-            suggested = f"{win_cmd} {args}"
-        else:
-            suggested = win_cmd
-        return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
+        # Cleanup registry
+        for pid in dead_pids:
+            self._processes.pop(pid, None)
 
-    # Check for compound commands like "ls -la"
-    for linux_cmd, win_cmd in LINUX_TO_WINDOWS_COMMANDS.items():
-        if failed_command.strip().startswith(linux_cmd):
-            rest = failed_command.strip()[len(linux_cmd) :].strip()
-            suggested = f"{win_cmd} {rest}".strip()
-            return f"\n\n💡 RETRY SUGGESTION: This appears to be a Linux command. On Windows, try:\n   {suggested}"
+        return active
 
-    return ""
+    def get_process_info(self, pid: int) -> ProcessInfo | None:
+        """Retrieve ProcessInfo for a given PID."""
+        return self._processes.get(pid)
+
+    def kill_process(self, pid: int) -> bool:
+        """Kill a registered process"""
+        if pid not in self._processes and not psutil.pid_exists(pid):
+            return False
+
+        try:
+            parent = psutil.Process(pid)
+            # Kill children first (recursive)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+
+            self._processes.pop(pid, None)
+            return True
+        except psutil.NoSuchProcess:
+            self._processes.pop(pid, None)
+            return False
+        except Exception as e:
+            logger.error(f"Failed to kill process {pid}: {e}")
+            return False
+
+    def cleanup_all(self):
+        """Kill all registered processes (for shutdown)"""
+        if not self._processes:
+            return
+
+        logger.info(f"Cleaning up {len(self._processes)} background processes...")
+        # Create a copy of keys since we modify the dict in kill_process
+        pids = list(self._processes.keys())
+        for pid in pids:
+            self.kill_process(pid)
+
+
+# Global Instance
+_process_registry = ProcessRegistry()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -122,8 +131,12 @@ class ShellArgs(BaseModel):
         description="Auto-answer 'yes' to interactive prompts (e.g., npm install confirmations)",
     )
     timeout: int = Field(
-        None,
-        description="Custom timeout in seconds (default: 60). Use higher values for long-running commands like npm install, npx create-*, cargo build, etc.",
+        60,
+        description="Custom timeout in seconds (default: 60). Use higher values for long-running commands. Ignored for background tasks.",
+    )
+    background: bool = Field(
+        False,
+        description="Run command in background (detached). Use for servers/watchers. Output logs to file.",
     )
 
 
@@ -131,15 +144,10 @@ class ShellTool(BaseTool):
     """
     Execute Shell Command (Advanced)
 
-    Good Taste:
-      - Provides raw shell access for power users
-      - But description guides users to better alternatives
-      - Platform info helps Agent make informed choices
-
-    Configuration:
-      - timeout: 60 seconds (commands should complete quickly)
-      - max_retries: 0 (shell timeouts are usually not retryable)
-      - subprocess_timeout: Same as tool timeout (subprocess-level enforcement)
+    Capabilities:
+    - Blocking execution with real-time output streaming
+    - Background execution with process tracking and logging
+    - Auto-cleanup of background processes on exit
     """
 
     def __init__(self, timeout: int = 60):
@@ -151,68 +159,141 @@ class ShellTool(BaseTool):
             name="shell",
             description=f"""Execute shell command (Current shell: {shell_type} on {system}).
 
-IMPORTANT: For basic filesystem operations, prefer these cross-platform tools:
-- create_directory: Create directories (instead of mkdir)
-- copy_file: Copy files (instead of cp/copy)
-- move_file: Move/rename (instead of mv/move)
-- delete_path: Delete files/dirs (instead of rm/del)
+Use for:
+- Git, NPM, Pip, Cargo, Build tools, System queries
 
-Use shell ONLY for:
-- Version control (git commands)
-- Package managers (npm, pip, cargo)
-- Build tools (make, gcc, cargo build)
-- Process management (ps, kill)
-- System queries (which, env)
+Background Execution:
+- Set `background=True` for long-running tasks (servers, watchers)
+- Returns PID and Log Path immediately
+- Processes are auto-tracked and can be managed via `process_manager` tool
+- Logs are automatically stored in `logs/processes/` within the workspace.
 
-TIPS:
-- Use auto_yes=true for commands that may prompt for confirmation (e.g., npx, npm install)
-- Or use flags like --yes, -y, --force where available
-- Use timeout=300 (5 min) or higher for long-running commands like:
-  * npx create-react-app, create-next-app (use timeout=300)
-  * npm install with many dependencies (use timeout=180)
-  * cargo build, go build (use timeout=300)
-
-Returns stdout, stderr, and exit code.""",
+Timeout:
+- Applies to BLOCKING commands only
+- Background commands run indefinitely until killed
+""",
             timeout=timeout,
-            max_retries=0,  # Shell commands shouldn't be retried automatically
+            max_retries=0,
         )
-        # Use same timeout for subprocess (first line of defense)
         self.subprocess_timeout = timeout
 
     def _run(
-        self, command: str, cwd: str = ".", auto_yes: bool = False, timeout: int = None
+        self,
+        command: str,
+        cwd: str = ".",
+        auto_yes: bool = False,
+        timeout: int = 60,
+        background: bool = False,
     ) -> str:
-        # Validate working directory
         try:
             work_dir = resolve_workspace_path(cwd)
         except ValueError as exc:
-            raise ValueError(str(exc))
+            raise ValueError(str(exc)) from exc
 
         if not work_dir.exists():
             raise FileNotFoundError(f"Working directory not found: {cwd}")
 
-        # Use custom timeout if provided, otherwise use default
         effective_timeout = timeout if timeout is not None else self.subprocess_timeout
 
-        # Execute command with real-time output streaming
+        if background:
+            return self._run_background(command, work_dir, auto_yes)
+
         return self._run_with_streaming(command, work_dir, auto_yes, effective_timeout)
 
-    def _run_with_streaming(
-        self, command: str, work_dir, auto_yes: bool = False, timeout: int = 60
+    def _run_background(
+        self,
+        command: str,
+        work_dir,
+        auto_yes: bool = False,
     ) -> str:
-        """
-        Execute command with real-time output streaming (Claude Code style)
+        # Determine log file path (default to logs/processes/)
+        log_dir = settings.workspace_root / "logs" / "processes"
+        log_dir.mkdir(parents=True, exist_ok=True)
 
-        Design Philosophy:
-          - User sees output as it happens, not after completion
-          - Both stdout and stderr are streamed in real-time
-          - Full output is still captured for return value
-          - auto_yes: pipe 'y' to stdin for interactive prompts
-        """
+        timestamp = int(time.time())
+        safe_cmd = re.sub(r"[^a-zA-Z0-9]", "_", command[:20])
+        log_path = log_dir / f"proc_{timestamp}_{safe_cmd}.log"
+
+        publish_tool_event(
+            {
+                "event_type": "shell_started",
+                "command": command,
+                "cwd": str(work_dir),
+                "mode": "background",
+            }
+        )
+
+        try:
+            full_command = f'{command} > "{log_path}" 2>&1'
+
+            process = psutil.Popen(
+                full_command,
+                shell=True,
+                cwd=str(work_dir),
+                stdin=subprocess.PIPE if auto_yes else None,
+                text=True,
+            )
+
+            if auto_yes and process.stdin:
+                try:
+                    process.stdin.write("y\n")
+                    process.stdin.flush()
+                    process.stdin.close()
+                except Exception:
+                    pass
+
+            # Validation wait (2s)
+            try:
+                return_code = process.wait(timeout=2.0)
+
+                # Failed immediately
+                if return_code != 0:
+                    error_output = ""
+                    if log_path.exists():
+                        with open(log_path, encoding="utf-8", errors="replace") as lf:
+                            error_output = lf.read()
+                    else:
+                        error_output = "(Log file not created)"
+
+                    raise RuntimeError(f"Background command failed immediately (Code {return_code}):\n{error_output}")
+                # Finished successfully immediately (rare for 'background', but possible)
+                output = ""
+                if log_path.exists():
+                    with open(log_path, encoding="utf-8", errors="replace") as lf:
+                        output = lf.read()
+
+                # Remove log file if process finished immediately without errors and no output
+                if not output and log_path.exists():
+                    os.remove(log_path)
+                    return "Command finished immediately (Code 0). No output, log file removed."
+
+                return f"Command finished immediately (Code 0). Output saved to: {get_relative_path(log_path)}"
+
+            except psutil.TimeoutExpired:
+                # Successfully running in background
+
+                # REGISTER PROCESS
+                _process_registry.register(process.pid, command, str(log_path))
+
+                return (
+                    f"Command started in background.\n"
+                    f"PID: {process.pid}\n"
+                    f"Manage: Use 'process_manager' tool (action='list', action='kill', action='logs' for PID {process.pid}) for control."
+                )
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to start background command: {e}") from e
+
+    def _run_with_streaming(
+        self,
+        command: str,
+        work_dir,
+        auto_yes: bool = False,
+        timeout: int = 60,
+    ) -> str:
         stdout_lines = []
         stderr_lines = []
 
-        # Publish shell start event
         publish_tool_event(
             {
                 "event_type": "shell_started",
@@ -224,8 +305,6 @@ Returns stdout, stderr, and exit code.""",
         )
 
         try:
-            # Use Popen for real-time output
-            # If auto_yes, we'll pipe stdin to auto-answer prompts
             process = subprocess.Popen(
                 command,
                 shell=True,
@@ -234,28 +313,25 @@ Returns stdout, stderr, and exit code.""",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                encoding="utf-8",  # Force UTF-8 to handle international characters
-                errors="replace",  # Replace undecodable bytes instead of crashing
-                bufsize=1,  # Line buffered
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
             )
 
-            # If auto_yes, send 'y' and close stdin
             if auto_yes and process.stdin:
                 try:
                     process.stdin.write("y\n")
                     process.stdin.flush()
                     process.stdin.close()
                 except Exception:
-                    pass  # stdin might already be closed
+                    pass
 
-            # Read stdout and stderr in separate threads
             def read_stream(stream, lines_list, stream_type):
                 try:
                     for line in iter(stream.readline, ""):
                         if line:
                             line_stripped = line.rstrip("\n\r")
                             lines_list.append(line_stripped)
-                            # Publish each line as it comes
                             publish_tool_event(
                                 {
                                     "event_type": "shell_output",
@@ -266,17 +342,12 @@ Returns stdout, stderr, and exit code.""",
                 finally:
                     stream.close()
 
-            stdout_thread = threading.Thread(
-                target=read_stream, args=(process.stdout, stdout_lines, "stdout")
-            )
-            stderr_thread = threading.Thread(
-                target=read_stream, args=(process.stderr, stderr_lines, "stderr")
-            )
+            stdout_thread = threading.Thread(target=read_stream, args=(process.stdout, stdout_lines, "stdout"))
+            stderr_thread = threading.Thread(target=read_stream, args=(process.stderr, stderr_lines, "stderr"))
 
             stdout_thread.start()
             stderr_thread.start()
 
-            # Wait for process with timeout
             try:
                 return_code = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -290,13 +361,11 @@ Returns stdout, stderr, and exit code.""",
                         "status": "timeout",
                     }
                 )
-                raise RuntimeError(f"Command timed out ({timeout}s): {command}")
+                raise RuntimeError(f"Command timed out ({timeout}s): {command}") from None
 
-            # Wait for threads to finish reading
             stdout_thread.join(timeout=2)
             stderr_thread.join(timeout=2)
 
-            # Publish shell finished event
             publish_tool_event(
                 {
                     "event_type": "shell_finished",
@@ -316,14 +385,11 @@ Returns stdout, stderr, and exit code.""",
                         "error": str(e),
                     }
                 )
-            raise RuntimeError(f"Command execution error: {str(e)}")
+            raise RuntimeError(f"Command execution error: {e!s}") from e
 
-        # Construct output (return full info for both success and failure)
-        # Use relative path to hide workspace details from agent
-        rel_work_dir = get_relative_path(work_dir)
         output_lines = [
             f"Command: {command}",
-            f"Working Dir: {rel_work_dir or '.'}",
+            f"Working Dir: {get_relative_path(work_dir) or '.'}",
             f"Return Code: {return_code}",
             "",
         ]
@@ -333,20 +399,107 @@ Returns stdout, stderr, and exit code.""",
 
         if stdout_text:
             output_lines.extend(["─── STDOUT ───", stdout_text])
-
         if stderr_text:
             output_lines.extend(["─── STDERR ───", stderr_text])
 
-        # Raise exception on failure (let base class catch it)
         if return_code != 0:
             error_msg = stderr_text if stderr_text else stdout_text
-            # Add Windows command suggestion if applicable
-            suggestion = suggest_windows_command(command, error_msg)
-            raise RuntimeError(
-                f"Command failed (Code {return_code}):\n{error_msg}{suggestion}"
-            )
+            raise RuntimeError(f"Command failed (Code {return_code}):\n{error_msg}")
 
         return "\n".join(output_lines)
 
-    def get_args_schema(self) -> Type[BaseModel]:
+    def get_args_schema(self) -> type[BaseModel]:
         return ShellArgs
+
+
+# ═══════════════════════════════════════════════════════════════
+# Process Management Tool
+# ═══════════════════════════════════════════════════════════════
+
+
+class ProcessArgs(BaseModel):
+    action: Literal["list", "kill", "logs"] = Field(
+        ...,
+        description="Action to perform: 'list' (active processes), 'kill' (terminate), 'logs' (tail log of process)",
+    )
+    pid: int = Field(..., description="Process ID (required for 'kill' and 'logs')")
+    lines: int = Field(20, description="Number of lines to read for 'logs' (default: 20)")
+
+
+class ProcessManagementTool(BaseTool):
+    """
+    Manage background processes and view logs.
+
+    Actions:
+    - list: Show all running background processes started by the agent.
+    - kill: Terminate a specific process by PID.
+    - logs: Tail the last N lines of a log file associated with a PID.
+    """
+
+    def __init__(self):
+        super().__init__(
+            name="process_manager",
+            description="Manage background processes (list, kill, logs).",
+        )
+
+    def _run(
+        self,
+        action: Literal["list", "kill", "logs"],
+        pid: int | None = None,
+        lines: int = 20,
+    ) -> str:
+        if action == "list":
+            return self._list_processes()
+        if action == "kill":
+            if pid is None:
+                raise ValueError("PID is required for 'kill' action")
+            return self._kill_process(pid)
+        if action == "logs":
+            if pid is None:
+                raise ValueError("PID is required for 'logs' action")
+            return self._tail_log(pid, lines)
+        raise ValueError(f"Unknown action: {action}")
+
+    def _list_processes(self) -> str:
+        active = _process_registry.get_active_processes()
+        if not active:
+            return "No active background processes found."
+
+        output = [
+            "Active Background Processes:",
+            "PID   | Status  | Started (s) | Command",
+        ]
+        output.append("-" * 60)
+        now = time.time()
+        for p in active:
+            elapsed = int(now - p.start_time)
+            cmd_preview = (p.command[:30] + "...") if len(p.command) > 30 else p.command
+            output.append(f"{p.pid:<5} | {p.status:<7} | {elapsed:<11} | {cmd_preview}")
+
+        return "\n".join(output)
+
+    def _kill_process(self, pid: int) -> str:
+        if _process_registry.kill_process(pid):
+            return f"Successfully terminated process {pid}."
+        return f"Failed to terminate process {pid}. It may have already exited or does not exist."
+
+    def _tail_log(self, pid: int, lines: int) -> str:
+        proc_info = _process_registry.get_process_info(pid)
+        if not proc_info:
+            return f"No registered process found with PID: {pid}"
+
+        try:
+            path = Path(proc_info.log_file)
+            if not path.exists():
+                return f"Log file for PID {pid} not found: {get_relative_path(path)}"
+
+            with open(path, encoding="utf-8", errors="replace") as f:
+                tail_lines = collections.deque(f, maxlen=lines)
+
+            content = "".join(tail_lines)
+            return f"Last {len(tail_lines)} lines of log for PID {pid} ({get_relative_path(path)}):\n\n{content}"
+        except Exception as e:
+            return f"Error reading log file for PID {pid}: {e}"
+
+    def get_args_schema(self) -> type[BaseModel]:
+        return ProcessArgs

@@ -139,6 +139,8 @@ PLANNER_ALLOWED_TOOLS = {
     # Planning tools
     "submit_plan",
     "web_search",
+    # Sub-Agent (Context Isolation - CRITICAL for large codebases)
+    "spawn_sub_agent",  # Isolate dirty context during exploration
     # MCP tools (if loaded)
     "fetch",  # From mcp-server-fetch
     "fetch_html",  # From mcp-server-fetch
@@ -358,12 +360,17 @@ def create_multi_agent_graph():
             Regular function that returns state updates
         """
 
-        def worker_node(state: AgentState):
+        def worker_node(state: AgentState, config):
             """
             Regular node: invokes worker and returns final state
 
-            Note: Even though we use invoke(), LangChain auto-enables
-            streaming when the outer graph uses stream_mode="messages"
+            Architecture: Auto-streaming (LangChain official pattern)
+            - Accept config parameter (CRITICAL for streaming to work)
+            - Pass config to agent_graph.invoke()
+            - LangChain auto-enables streaming via callback propagation
+            - Outer graph with stream_mode="messages" + subgraphs=True captures tokens
+
+            Reference: https://github.com/langchain-ai/langgraph/issues/137
             """
             logger.info(f"[{name}] Starting execution...")
 
@@ -478,7 +485,14 @@ Your job is to VERIFY the implementation:
 
             try:
                 with worker_context(name):
-                    result = agent_graph.invoke(state)
+                    # ═══════════════════════════════════════════════════════════════
+                    # Invoke worker agent with config (enables auto-streaming)
+                    # ═══════════════════════════════════════════════════════════════
+                    # CRITICAL: Pass config to enable LangChain's auto-streaming
+                    # The outer graph (with subgraphs=True) will capture streamed tokens
+                    # via callback propagation. This is the official LangChain pattern.
+                    # ═══════════════════════════════════════════════════════════════
+                    result = agent_graph.invoke(state, config=config)
 
                 # Extract messages from result
                 new_messages = result.get("messages", [])

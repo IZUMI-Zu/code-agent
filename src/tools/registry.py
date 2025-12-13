@@ -34,7 +34,8 @@ from .filesystem import (
 from .grep import GrepTool
 from .planning import SubmitPlanTool
 from .search import BraveSearchTool
-from .shell import ShellTool
+from .shell import ProcessManagementTool, ShellTool
+from .sub_agent import SubAgentTool
 
 # ═══════════════════════════════════════════════════════════════
 # Tool Registry (Singleton Pattern)
@@ -86,8 +87,11 @@ class ToolRegistry:
             PathExistsTool(),
             # Shell (Advanced)
             ShellTool(),
+            ProcessManagementTool(),
             # Planning
             SubmitPlanTool(),
+            # Sub-Agent (Context Isolation)
+            SubAgentTool(),
             # External
             BraveSearchTool(),
         ]
