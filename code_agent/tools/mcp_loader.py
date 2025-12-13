@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 MCP (Model Context Protocol) Tool Loader
-═══════════════════════════════════════════════════════════════
 Integrates MCP servers as LangChain tools using langchain-mcp-adapters.
 
 Architecture:
@@ -127,9 +125,7 @@ class MCPToolLoader:
         # so no explicit close is needed.
 
 
-# ═══════════════════════════════════════════════════════════════
 # Singleton instance for easy access
-# ═══════════════════════════════════════════════════════════════
 
 _mcp_loader: MCPToolLoader | None = None
 

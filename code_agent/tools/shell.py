@@ -19,9 +19,7 @@ from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 
-# ═══════════════════════════════════════════════════════════════
 # Global Process Registry
-# ═══════════════════════════════════════════════════════════════
 
 
 class ProcessInfo(BaseModel):
@@ -118,9 +116,7 @@ class ProcessRegistry:
 _process_registry = ProcessRegistry()
 
 
-# ═══════════════════════════════════════════════════════════════
 # Shell Execution Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class ShellArgs(BaseModel):
@@ -412,9 +408,7 @@ Timeout:
         return ShellArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # Process Management Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class ProcessArgs(BaseModel):

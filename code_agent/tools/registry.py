@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 Tool Registry - Centralized Tool Management
-═══════════════════════════════════════════════════════════════
 Design Philosophy:
   - Single Registry Point (Eliminate scattered tool definitions)
   - Lazy Initialization (Load on demand, save resources)
@@ -37,9 +35,7 @@ from .search import BraveSearchTool
 from .shell import ProcessManagementTool, ShellTool
 from .sub_agent import SubAgentTool
 
-# ═══════════════════════════════════════════════════════════════
 # Tool Registry (Singleton Pattern)
-# ═══════════════════════════════════════════════════════════════
 
 
 class ToolRegistry:
@@ -206,9 +202,7 @@ class ToolRegistry:
         return built_in + self._mcp_tools
 
 
-# ═══════════════════════════════════════════════════════════════
 # Global Singleton
-# ═══════════════════════════════════════════════════════════════
 
 _global_registry = ToolRegistry()
 

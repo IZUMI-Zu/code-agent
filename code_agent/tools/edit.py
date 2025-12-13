@@ -159,9 +159,7 @@ class StrReplaceTool(BaseTool):
         return StrReplaceArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # Insert Lines Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class InsertLinesArgs(BaseModel):
@@ -253,9 +251,7 @@ class InsertLinesTool(BaseTool):
         return InsertLinesArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # Delete Lines Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class DeleteLinesArgs(BaseModel):
@@ -336,9 +332,7 @@ class DeleteLinesTool(BaseTool):
         return DeleteLinesArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # Append to File Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class AppendFileArgs(BaseModel):

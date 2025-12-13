@@ -12,10 +12,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-# ═══════════════════════════════════════════════════════════════
 # Global Console Instance & Color Palette
-# ═══════════════════════════════════════════════════════════════
-
 console = Console()
 
 # Claude Code 风格配色方案 (柔和、低饱和度)
@@ -61,9 +58,7 @@ ICONS = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════
 # Streaming Text Renderer
-# ═══════════════════════════════════════════════════════════════
 
 
 class StreamingText:
@@ -131,9 +126,7 @@ class StreamingText:
         return self._buffer
 
 
-# ═══════════════════════════════════════════════════════════════
 # Message Renderer
-# ═══════════════════════════════════════════════════════════════
 
 
 def render_message(message) -> None:
@@ -181,9 +174,7 @@ def _render_tool_calls(tool_calls: list) -> None:
     # Tool calls are now rendered in real-time during execution
 
 
-# ═══════════════════════════════════════════════════════════════
 # Welcome Screen
-# ═══════════════════════════════════════════════════════════════
 
 
 def render_welcome() -> None:
@@ -200,9 +191,7 @@ def render_welcome() -> None:
     console.print()
 
 
-# ═══════════════════════════════════════════════════════════════
 # Status Indicator
-# ═══════════════════════════════════════════════════════════════
 
 
 def show_thinking(task: str = "Thinking") -> Status:
@@ -392,9 +381,7 @@ def _format_args_preview(args: Any, max_length: int = 60) -> str:
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════
 # Status Bar & Separator
-# ═══════════════════════════════════════════════════════════════
 
 
 def render_status_bar(model: str = "GPT-4", cost: str = "$0.00", workspace: str = "./") -> None:
@@ -428,9 +415,7 @@ def render_separator() -> None:
     console.print("─" * console.width, style=COLORS["dim"])
 
 
-# ═══════════════════════════════════════════════════════════════
 # Shell Output Streaming (Claude Code Style)
-# ═══════════════════════════════════════════════════════════════
 
 
 def render_shell_start(command: str, cwd: str | None = None) -> None:
@@ -480,9 +465,7 @@ def render_shell_finished(return_code: int = 0, status: str = "completed") -> No
         )
 
 
-# ═══════════════════════════════════════════════════════════════
 # Confirmation Dialog
-# ═══════════════════════════════════════════════════════════════
 
 
 def render_tool_confirmation(

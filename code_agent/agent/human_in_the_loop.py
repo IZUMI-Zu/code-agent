@@ -154,9 +154,7 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
                 result_preview = str(result)
                 return result
             except Exception as exc:
-                # ═══════════════════════════════════════════════════════════════
                 # Special handling for control flow exceptions
-                # ═══════════════════════════════════════════════════════════════
                 # PlanSubmittedException is NOT an error - it's a control flow signal
                 # We must re-raise it so the worker_node can catch it
                 from code_agent.tools.planning import PlanSubmittedException

@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 Agent Core - Multi-Agent System
-═══════════════════════════════════════════════════════════════
 Architecture:
   - Supervisor (Orchestrator): Manages task distribution and coordination
   - Planner: Project planning
@@ -67,9 +65,7 @@ def create_worker(name: str, system_prompt: str, tools: list, middleware: list |
     return agent
 
 
-# ═══════════════════════════════════════════════════════════════
 # Tool Loading (with MCP support)
-# ═══════════════════════════════════════════════════════════════
 # MCP tools are loaded asynchronously on first use
 # This avoids blocking the module import
 
@@ -118,9 +114,7 @@ def _get_tools_for_agent(include_mcp: bool = True):
 all_tools = registry.get_all_tools()
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
-# ═══════════════════════════════════════════════════════════════
 # Tools for Planner: Read + Scaffolding + Planning
-# ═══════════════════════════════════════════════════════════════
 # Per LangGraph docs: "Each specialist should have the tools needed to complete their responsibilities"
 # Planner is responsible for:
 #   1. Analyzing project requirements
@@ -161,9 +155,7 @@ REVIEWER_ALLOWED_TOOLS = {
 }
 lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
 
-# ═══════════════════════════════════════════════════════════════
 # Create Summarization Middleware (prevent context window overflow)
-# ═══════════════════════════════════════════════════════════════
 # Auto-summarize old messages when conversation gets too long
 # Reference: https://docs.langchain.com/oss/python/langchain/middleware/built-in
 
@@ -176,9 +168,7 @@ summarization = SummarizationMiddleware(
     messages_to_keep=settings.summarization_keep_messages,
 )
 
-# ═══════════════════════════════════════════════════════════════
 # Create worker agents with appropriate tool sets
-# ═══════════════════════════════════════════════════════════════
 # REMOVED: ToolCallLimitMiddleware (was misused for workflow control)
 # Workflow control is now handled by state + supervisor routing
 # Per LangGraph docs: middleware is for cross-cutting concerns, NOT workflow logic
@@ -221,9 +211,7 @@ def supervisor_node(state: AgentState):
 
     logger.info(f"Supervisor: phase={phase}, iteration={iteration_count}/{max_iterations}, review={review_status}")
 
-    # ═══════════════════════════════════════════════════════════════
     # Helper functions
-    # ═══════════════════════════════════════════════════════════════
     def is_last_message_from_user():
         if not messages:
             return False
@@ -239,9 +227,7 @@ def supervisor_node(state: AgentState):
                 count += 1
         return count
 
-    # ═══════════════════════════════════════════════════════════════
     # Safety Warning: High iteration count (soft limit, not forced termination)
-    # ═══════════════════════════════════════════════════════════════
     # Good Taste: Let the task complete naturally (review_status="passed")
     # rather than forcing termination. max_iterations is a WARNING, not a HARD LIMIT.
     # User can always Ctrl+C if truly stuck.
@@ -251,9 +237,7 @@ def supervisor_node(state: AgentState):
             f"Continuing but may be stuck in a loop. User can interrupt with Ctrl+C."
         )
 
-    # ═══════════════════════════════════════════════════════════════
     # New user message → Route to Planner (but preserve context!)
-    # ═══════════════════════════════════════════════════════════════
     if is_last_message_from_user():
         user_msg_count = count_user_messages()
         logger.info(f"Supervisor: User message #{user_msg_count} detected, routing to Planner")
@@ -283,9 +267,7 @@ def supervisor_node(state: AgentState):
             "issues_found": [],
         }
 
-    # ═══════════════════════════════════════════════════════════════
     # Phase-based routing with feedback loops
-    # ═══════════════════════════════════════════════════════════════
     if phase == "planning":
         if plan is not None:
             logger.info("Supervisor: Plan submitted, moving to coding phase")
@@ -302,10 +284,8 @@ def supervisor_node(state: AgentState):
         }
 
     if phase == "reviewing":
-        # ═══════════════════════════════════════════════════════════════
         # CRITICAL: Feedback loop implementation
         # Check Reviewer's verdict and decide whether to iterate
-        # ═══════════════════════════════════════════════════════════════
         if review_status == "needs_fixes":
             logger.info("Supervisor: Review FAILED, routing back to Coder (feedback loop)")
             return {
@@ -336,9 +316,7 @@ def create_multi_agent_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("Supervisor", supervisor_node)
 
-    # ═══════════════════════════════════════════════════════════════
     # Worker Node Factory (Regular Function for stream_mode="messages")
-    # ═══════════════════════════════════════════════════════════════
     # Best Practice from LangGraph docs:
     #   - Use regular functions (not generators)
     #   - LLM calls with model.invoke() auto-enable streaming
@@ -346,8 +324,6 @@ def create_multi_agent_graph():
     #
     # This allows the main graph's stream() to capture LLM tokens
     # from inside the worker agent's execution.
-    # ═══════════════════════════════════════════════════════════════
-
     def make_worker_node(agent_graph, name: str):
         """
         Create a regular function worker node that supports streaming
@@ -471,27 +447,21 @@ Your job is to VERIFY the implementation:
                 state = {**state, "messages": [*list(state["messages"]), review_msg]}
                 logger.info(f"[{name}] Injected review context")
 
-            # ═══════════════════════════════════════════════════════════════
             # Invoke worker agent with PlanSubmittedException handling
-            # ═══════════════════════════════════════════════════════════════
             # For Planner: catch PlanSubmittedException to immediately stop
             # after submit_plan is called. This is more reliable than
             # prompt-based "STOP NOW" instructions.
             #
             # Reference: LangGraph docs recommend using exceptions for
             # immediate termination of agent loops.
-            # ═══════════════════════════════════════════════════════════════
             from code_agent.tools.planning import PlanSubmittedException
 
             try:
                 with worker_context(name):
-                    # ═══════════════════════════════════════════════════════════════
                     # Invoke worker agent with config (enables auto-streaming)
-                    # ═══════════════════════════════════════════════════════════════
                     # CRITICAL: Pass config to enable LangChain's auto-streaming
                     # The outer graph (with subgraphs=True) will capture streamed tokens
                     # via callback propagation. This is the official LangChain pattern.
-                    # ═══════════════════════════════════════════════════════════════
                     result = agent_graph.invoke(state, config=config)
 
                 # Extract messages from result
@@ -502,9 +472,7 @@ Your job is to VERIFY the implementation:
                 # Build return state
                 return_state = {"messages": new_messages}
 
-                # ═══════════════════════════════════════════════════════════════
                 # Extract Plan if this is Planner (fallback for normal completion)
-                # ═══════════════════════════════════════════════════════════════
                 if name == "Planner":
                     for msg in new_messages:
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -530,11 +498,9 @@ Your job is to VERIFY the implementation:
                                         logger.error(f"[{name}] Plan extraction failed: {e}")
 
             except PlanSubmittedException as e:
-                # ═══════════════════════════════════════════════════════════════
                 # Plan submitted! Extract plan and return immediately.
                 # This is the preferred path - agent stopped immediately after
                 # submit_plan was called, no extra tool calls.
-                # ═══════════════════════════════════════════════════════════════
                 logger.info(f"[{name}] Plan submitted via exception - stopping immediately")
                 from langchain_core.messages import AIMessage
 
@@ -548,9 +514,7 @@ Your job is to VERIFY the implementation:
                     "plan": e.plan,
                 }
 
-            # ═══════════════════════════════════════════════════════════════
             # Extract review_status if this is Reviewer
-            # ═══════════════════════════════════════════════════════════════
             if name == "Reviewer":
                 # Parse Reviewer's structured output
                 # Architecture: Use structured output instead of fragile string matching
@@ -566,9 +530,7 @@ Your job is to VERIFY the implementation:
                     try:
                         from code_agent.agent.structured_output import ReviewResult
 
-                        # ═══════════════════════════════════════════════════════════════
                         # Extract JSON from content (LLM might add extra text)
-                        # ═══════════════════════════════════════════════════════════════
                         # Try direct parsing first
                         try:
                             review_data = json.loads(content)
@@ -638,9 +600,7 @@ Your job is to VERIFY the implementation:
     return workflow.compile(checkpointer=MemorySaver())
 
 
-# ═══════════════════════════════════════════════════════════════
 # Async Initialization (for MCP tools)
-# ═══════════════════════════════════════════════════════════════
 
 
 async def initialize_mcp_tools():

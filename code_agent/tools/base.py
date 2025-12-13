@@ -17,9 +17,7 @@ from tenacity import (
 
 from code_agent.utils.logger import logger
 
-# ═══════════════════════════════════════════════════════════════
 # Exception Types
-# ═══════════════════════════════════════════════════════════════
 
 
 class ToolTimeoutError(Exception):

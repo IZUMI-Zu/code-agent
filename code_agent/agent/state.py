@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 Agent State Definition - Single Source of Truth for Data Flow
-═══════════════════════════════════════════════════════════════
 Design Philosophy:
   - Immutability: Clear and traceable state transitions
   - No Special Cases: All messages follow a unified structure
@@ -15,9 +13,7 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
-# ═══════════════════════════════════════════════════════════════
 # Data Models
-# ═══════════════════════════════════════════════════════════════
 
 
 class Task(BaseModel):
@@ -34,9 +30,7 @@ class Task(BaseModel):
     description: str = Field(..., description="Task description")
     status: Literal["pending", "in_progress", "completed"] = "pending"
 
-    # ═══════════════════════════════════════════════════════════════
     # Enhanced fields for better task management
-    # ═══════════════════════════════════════════════════════════════
     depends_on: list[int] = Field(
         default_factory=list,
         description="IDs of prerequisite tasks that must complete first",
@@ -56,9 +50,7 @@ class Plan(BaseModel):
     summary: str = Field(..., description="Plan summary")
 
 
-# ═══════════════════════════════════════════════════════════════
 # Core State Structure
-# ═══════════════════════════════════════════════════════════════
 
 
 class AgentState(TypedDict):
@@ -98,9 +90,7 @@ class AgentState(TypedDict):
     # Workflow phase: planning -> coding -> reviewing -> done
     phase: Literal["planning", "coding", "reviewing", "done"]
 
-    # ═══════════════════════════════════════════════════════════════
     # Feedback Loop Control (LangGraph Best Practice)
-    # ═══════════════════════════════════════════════════════════════
     iteration_count: int  # Current iteration number (0-indexed)
     max_iterations: int  # Safety limit to prevent infinite loops (default: 15)
 
@@ -108,9 +98,7 @@ class AgentState(TypedDict):
     issues_found: list[str]  # Specific issues identified by Reviewer
 
 
-# ═══════════════════════════════════════════════════════════════
 # Tool Execution Result (Unified Structure)
-# ═══════════════════════════════════════════════════════════════
 
 
 class ToolResult(TypedDict):

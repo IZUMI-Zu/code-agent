@@ -4,9 +4,7 @@ from code_agent.agent.state import Plan
 
 from .base import BaseTool
 
-# ═══════════════════════════════════════════════════════════════
 # Custom Exception for Plan Submission
-# ═══════════════════════════════════════════════════════════════
 # This exception is used to signal that the plan has been submitted
 # and the agent should stop immediately. The worker node catches this
 # exception and extracts the plan from it.
@@ -15,7 +13,6 @@ from .base import BaseTool
 # - Command only updates state, doesn't stop the agent loop
 # - Exception immediately terminates the tool-calling loop
 # - Worker node can catch it and handle gracefully
-# ═══════════════════════════════════════════════════════════════
 
 
 class PlanSubmittedException(Exception):

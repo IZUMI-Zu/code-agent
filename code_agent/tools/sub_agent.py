@@ -1,8 +1,6 @@
 """
 cSpell:ignore Yuyz, deepagents
-═══════════════════════════════════════════════════════════════
 Sub-Agent Tool - Context Isolation Pattern (Claude Code Style)
-═══════════════════════════════════════════════════════════════
 Core Philosophy:
   - Sub-Agent is "scratchpad", not an independent role
   - Execute dirty tasks in isolated context (large-scale search, multi-file exploration)
@@ -27,9 +25,7 @@ from code_agent.utils.logger import logger
 
 from .base import BaseTool
 
-# ═══════════════════════════════════════════════════════════════
 # Sub-Agent Input Schema
-# ═══════════════════════════════════════════════════════════════
 
 
 class SubAgentArgs(BaseModel):
@@ -65,9 +61,7 @@ Examples:
     )
 
 
-# ═══════════════════════════════════════════════════════════════
 # Sub-Agent Tool Implementation
-# ═══════════════════════════════════════════════════════════════
 
 
 class SubAgentTool(BaseTool):
@@ -163,14 +157,11 @@ SUMMARY:
 Task: {task}
 """
 
-            # ═══════════════════════════════════════════════════════════════
             # Good Taste: Create model directly from config (don't pollute env vars)
-            # ═══════════════════════════════════════════════════════════════
             # Eliminate special cases:
             # - No need to save/restore env vars (26 lines → 3 lines)
             # - No global side effects (thread safe)
             # - Unified config management (all through settings)
-            # ═══════════════════════════════════════════════════════════════
             model = init_chat_model(
                 f"openai:{settings.reasoning_model}",
                 api_key=settings.openai_api_key.get_secret_value() if settings.openai_api_key else "",

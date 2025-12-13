@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 Filesystem Tools - Cross-Platform Abstraction
-═══════════════════════════════════════════════════════════════
 Design Philosophy:
     - Good Taste: Hide platform differences, provide unified interface
     - Simplicity: Each tool does ONE thing (create dir, copy file, etc.)
@@ -20,9 +18,7 @@ from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 
-# ═══════════════════════════════════════════════════════════════
 # Directory Operations
-# ═══════════════════════════════════════════════════════════════
 
 
 class CreateDirectoryArgs(BaseModel):
@@ -66,9 +62,7 @@ class CreateDirectoryTool(BaseTool):
         return CreateDirectoryArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # File Operations
-# ═══════════════════════════════════════════════════════════════
 
 
 class CopyFileArgs(BaseModel):
@@ -204,9 +198,7 @@ class DeletePathTool(BaseTool):
         return DeletePathArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # Path Operations
-# ═══════════════════════════════════════════════════════════════
 
 
 class PathExistsArgs(BaseModel):

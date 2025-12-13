@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 Tool Event Bus
-═══════════════════════════════════════════════════════════════
 Provides a lightweight pub/sub style interface so different
 components (agent runtime, TUI, future web clients) can share
 structured tool execution events in real time.

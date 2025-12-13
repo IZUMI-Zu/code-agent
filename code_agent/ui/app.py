@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 TUI Application Main Controller
-═══════════════════════════════════════════════════════════════
 Design: Claude Code style
   - Tool calls displayed in real-time during execution
   - Agent's final response displayed after all tools complete

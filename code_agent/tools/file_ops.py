@@ -1,7 +1,5 @@
 """
-═══════════════════════════════════════════════════════════════
 File Operation Tools
-═══════════════════════════════════════════════════════════════
 Implementation Principles:
   - Each tool does one thing (read/write/list)
   - Parameter validation upfront, avoiding deep nesting
@@ -16,9 +14,7 @@ from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 
-# ═══════════════════════════════════════════════════════════════
 # File Read Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class ReadFileArgs(BaseModel):
@@ -86,9 +82,7 @@ class ReadFileTool(BaseTool):
         return ReadFileArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # File Write Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class WriteFileArgs(BaseModel):
@@ -122,9 +116,7 @@ class WriteFileTool(BaseTool):
         return WriteFileArgs
 
 
-# ═══════════════════════════════════════════════════════════════
 # File List Tool
-# ═══════════════════════════════════════════════════════════════
 
 
 class ListFilesArgs(BaseModel):
