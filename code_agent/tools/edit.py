@@ -3,8 +3,8 @@ import pathlib
 
 from pydantic import BaseModel, Field
 
-from src.utils.logger import logger
-from src.utils.path import get_relative_path, resolve_workspace_path
+from code_agent.utils.logger import logger
+from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 

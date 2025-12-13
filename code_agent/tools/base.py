@@ -15,7 +15,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from src.utils.logger import logger
+from code_agent.utils.logger import logger
 
 # ═══════════════════════════════════════════════════════════════
 # Exception Types

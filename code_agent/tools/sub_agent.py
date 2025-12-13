@@ -22,8 +22,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.config import settings
-from src.utils.logger import logger
+from code_agent.config import settings
+from code_agent.utils.logger import logger
 
 from .base import BaseTool
 
@@ -227,7 +227,7 @@ Task: {task}
         - Principle of Least Privilege (give only needed tools)
         - Avoid tool misuse
         """
-        from src.tools.registry import get_registry
+        from code_agent.tools.registry import get_registry
 
         registry = get_registry()
 

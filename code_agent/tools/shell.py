@@ -12,10 +12,10 @@ from typing import Literal
 import psutil
 from pydantic import BaseModel, Field
 
-from src.config import settings  # Import settings for workspace_root
-from src.utils.event_bus import publish_tool_event
-from src.utils.logger import logger
-from src.utils.path import get_relative_path, resolve_workspace_path
+from code_agent.config import settings  # Import settings for workspace_root
+from code_agent.utils.event_bus import publish_tool_event
+from code_agent.utils.logger import logger
+from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 

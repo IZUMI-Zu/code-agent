@@ -3,7 +3,7 @@ import time
 import requests
 from pydantic import BaseModel, Field
 
-from src.config import settings
+from code_agent.config import settings
 
 from .base import BaseTool, RetryableError
 

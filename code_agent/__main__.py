@@ -17,13 +17,13 @@ def parse_args():
 def main():
     args = parse_args()
     workspace_path = Path(args.workspace).resolve()
-    from src.config import settings
+    from code_agent.config import settings
 
     settings.override_workspace(workspace_path)
 
     print(f"📂 Workspace set to: {workspace_path}")
 
-    from src.ui.app import main as run_app
+    from code_agent.ui.app import main as run_app
 
     run_app()
 

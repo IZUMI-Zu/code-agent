@@ -16,7 +16,7 @@ Reference:
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from src.utils.logger import logger
+from code_agent.utils.logger import logger
 
 
 class MCPToolLoader:

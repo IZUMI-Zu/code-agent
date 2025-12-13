@@ -8,9 +8,9 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from langgraph.types import interrupt
 
-from src.config import settings
-from src.utils.event_bus import publish_tool_event
-from src.utils.logger import logger
+from code_agent.config import settings
+from code_agent.utils.event_bus import publish_tool_event
+from code_agent.utils.logger import logger
 
 from .context import get_current_worker
 
@@ -159,7 +159,7 @@ def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
                 # ═══════════════════════════════════════════════════════════════
                 # PlanSubmittedException is NOT an error - it's a control flow signal
                 # We must re-raise it so the worker_node can catch it
-                from src.tools.planning import PlanSubmittedException
+                from code_agent.tools.planning import PlanSubmittedException
 
                 if isinstance(exc, PlanSubmittedException):
                     # Re-raise control flow exceptions

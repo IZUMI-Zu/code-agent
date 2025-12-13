@@ -26,14 +26,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from src.config import settings
-from src.prompts import (
+from code_agent.config import settings
+from code_agent.prompts import (
     CODER_PROMPT,
     PLANNER_PROMPT,
     REVIEWER_PROMPT,
 )
-from src.tools.registry import get_registry
-from src.utils.logger import logger
+from code_agent.tools.registry import get_registry
+from code_agent.utils.logger import logger
 
 from .context import worker_context
 from .human_in_the_loop import wrap_tool_with_confirmation
@@ -481,7 +481,7 @@ Your job is to VERIFY the implementation:
             # Reference: LangGraph docs recommend using exceptions for
             # immediate termination of agent loops.
             # ═══════════════════════════════════════════════════════════════
-            from src.tools.planning import PlanSubmittedException
+            from code_agent.tools.planning import PlanSubmittedException
 
             try:
                 with worker_context(name):
@@ -564,7 +564,7 @@ Your job is to VERIFY the implementation:
 
                     # Try to parse as JSON (structured output)
                     try:
-                        from src.agent.structured_output import ReviewResult
+                        from code_agent.agent.structured_output import ReviewResult
 
                         # ═══════════════════════════════════════════════════════════════
                         # Extract JSON from content (LLM might add extra text)

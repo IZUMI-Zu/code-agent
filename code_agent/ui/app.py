@@ -20,9 +20,9 @@ from prompt_toolkit.key_binding import KeyBindings
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 
-from src.agent.graph import agent_graph
-from src.utils.event_bus import drain_tool_events
-from src.utils.logger import logger
+from code_agent.agent.graph import agent_graph
+from code_agent.utils.event_bus import drain_tool_events
+from code_agent.utils.logger import logger
 
 from .components import (
     console,
@@ -417,7 +417,7 @@ def main():
     import asyncio
 
     # Initialize MCP tools before starting the app
-    from src.agent.graph import initialize_mcp_tools
+    from code_agent.agent.graph import initialize_mcp_tools
 
     try:
         logger.info("Initializing MCP tools...")

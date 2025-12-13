@@ -16,7 +16,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from src.utils.logger import logger
+from code_agent.utils.logger import logger
 
 from .base import BaseTool
 

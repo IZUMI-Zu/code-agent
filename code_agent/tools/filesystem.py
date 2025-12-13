@@ -16,7 +16,7 @@ import shutil
 
 from pydantic import BaseModel, Field
 
-from src.utils.path import get_relative_path, resolve_workspace_path
+from code_agent.utils.path import get_relative_path, resolve_workspace_path
 
 from .base import BaseTool
 

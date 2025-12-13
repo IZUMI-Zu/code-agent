@@ -8,7 +8,7 @@ workspace root. Tools should resolve every incoming path through
 
 from pathlib import Path
 
-from src.config import settings
+from code_agent.config import settings
 
 
 def resolve_workspace_path(path_str: str) -> Path:
