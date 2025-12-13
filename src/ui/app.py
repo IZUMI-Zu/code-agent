@@ -10,6 +10,7 @@ Design: Claude Code style
 import threading
 import time
 import uuid
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
@@ -19,9 +20,10 @@ from prompt_toolkit.key_binding import KeyBindings
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 
-from ..agent.graph import agent_graph
-from ..utils.event_bus import drain_tool_events
-from ..utils.logger import logger
+from src.agent.graph import agent_graph
+from src.utils.event_bus import drain_tool_events
+from src.utils.logger import logger
+
 from .components import (
     console,
     render_separator,
@@ -30,10 +32,14 @@ from .components import (
     render_shell_start,
     render_tool_confirmation,
     render_tool_execution,
+    render_tool_result_preview,
     render_welcome,
     show_thinking,
     start_tool_spinner,
 )
+
+if TYPE_CHECKING:
+    from langchain_core.runnables import RunnableConfig
 
 
 class TUIApp:
@@ -42,15 +48,13 @@ class TUIApp:
     def __init__(self):
         self.graph = agent_graph
         self.thread_id = str(uuid.uuid4())
-        self.config = {"configurable": {"thread_id": self.thread_id}}
+        self.config = cast("RunnableConfig", {"configurable": {"thread_id": self.thread_id}})
         self.session = PromptSession()
         self._tool_event_start_times = {}
         self._active_spinners = {}
         self._tool_event_lock = threading.Lock()
         self._event_stop = threading.Event()
-        self._event_thread = threading.Thread(
-            target=self._tool_event_consumer, daemon=True
-        )
+        self._event_thread = threading.Thread(target=self._tool_event_consumer, daemon=True)
         self._event_thread.start()
         logger.info(f"TUI Application initialized with thread_id: {self.thread_id}")
 
@@ -115,11 +119,16 @@ class TUIApp:
 
     def _handle_user_input(self, user_input: str):
         """
-        Handle user input - Claude Code style:
-        1. Show tool calls in real-time
-        2. Show agent's final response after completion
+        Handle user input - Timeline style:
+        1. Start timeline marker after user input
+        2. Agent output in chat bubble style
+        3. Tool calls displayed in timeline
         """
         logger.info(f"User input: {user_input}")
+
+        # Timeline 开始标记
+        console.print()
+        console.print("[dim]│[/dim]")
 
         user_message = HumanMessage(content=user_input)
         progress = show_thinking("Processing")
@@ -127,23 +136,99 @@ class TUIApp:
 
         try:
             while True:
-                # Run graph and collect final state
-                # Tool events are displayed in real-time via background thread
-                final_state = None
-                for state in self.graph.stream(
-                    input_payload,
-                    config=self.config,
-                    stream_mode="values",
-                ):
-                    final_state = state
+                # Stream with messages mode to capture LLM tokens
+                # subgraphs=True enables streaming from nested agent graphs
+                current_node = None
 
-                # Stop spinner
-                if progress:
-                    progress.stop()
-                    progress = None
+                try:
+                    for item in self.graph.stream(
+                        cast("Any", input_payload),
+                        config=self.config,
+                        stream_mode="messages",
+                        subgraphs=True,  # ✅ Enable subgraph token streaming
+                    ):
+                        # Unpack nested tuple: (namespace, (chunk, metadata))
+                        if isinstance(item, tuple) and len(item) == 2:
+                            _, inner = item
+                            if isinstance(inner, tuple) and len(inner) == 2:
+                                chunk, metadata = inner
+                            else:
+                                continue  # Skip malformed items
+                        else:
+                            continue  # Skip non-tuple items
+
+                        # Stop spinner on first token
+                        if progress:
+                            progress.stop()
+                            progress = None
+
+                        # Filter streaming messages for clean UX (Good Taste)
+                        # Architecture: Use metadata to understand structure, not content to guess
+                        #
+                        # Only show: LLM thinking from worker agents (Planner/Coder/Reviewer)
+                        # Skip: tool nodes, supervisor, malformed messages
+
+                        # Extract metadata
+                        node_type = metadata.get("langgraph_node", "")
+                        checkpoint_ns = metadata.get("checkpoint_ns", "")
+
+                        # Identify worker agent from checkpoint namespace
+                        worker_name = None
+                        if "Planner:" in checkpoint_ns:
+                            worker_name = "Planner"
+                        elif "Coder:" in checkpoint_ns:
+                            worker_name = "Coder"
+                        elif "Reviewer:" in checkpoint_ns:
+                            worker_name = "Reviewer"
+
+                        # Only show content from "model" nodes within worker agents
+                        # This filters out: tools, supervisor, and other internal nodes
+                        if worker_name and node_type == "model":
+                            # Print worker header on first token from new worker
+                            if worker_name != current_node:
+                                if current_node:  # Add spacing between workers
+                                    console.print()
+                                    console.print("[dim]│[/dim]")
+                                current_node = worker_name
+
+                                # Agent 标识 (Timeline 风格, 聊天气泡)
+                                agent_icons = {
+                                    "Planner": "📋",
+                                    "Coder": "💻",
+                                    "Reviewer": "🔍",
+                                }
+                                agent_colors = {
+                                    "Planner": "bright_magenta",
+                                    "Coder": "bright_cyan",
+                                    "Reviewer": "bright_yellow",
+                                }
+                                icon = agent_icons.get(worker_name, "💭")
+                                agent_color = agent_colors.get(worker_name, "green")
+
+                                console.print()
+                                console.print(f"[bold {agent_color}]{icon} {worker_name}:[/bold {agent_color}]")
+
+                            # Stream token output (chat bubble style, 左边框)
+                            # No content filtering needed - node type already ensures clean output
+                            if hasattr(chunk, "content") and chunk.content:
+                                # 为每个 token 添加左边框 (如果是新行)
+                                for char in chunk.content:
+                                    console.print(char, end="", markup=False)
+
+                    # Add final newline after streaming completes
+                    if current_node:
+                        console.print()
+
+                except KeyboardInterrupt:
+                    # User pressed Ctrl+C during streaming
+                    console.print("\n\n[yellow]⚠ Execution interrupted by user[/yellow]")
+                    raise  # Re-raise to outer handler
 
                 # Flush any remaining tool events
                 self._flush_tool_events()
+
+                # Timeline 结束标记
+                console.print("[dim]│[/dim]")
 
                 # Check for interrupts (tool confirmations)
                 snapshot = self.graph.get_state(self.config)
@@ -155,10 +240,6 @@ class TUIApp:
                         input_payload = Command(resume=decision)
                         progress = show_thinking("Continuing")
                         continue
-
-                # Display final agent response
-                if final_state:
-                    self._display_final_response(final_state)
 
                 break
 
@@ -177,7 +258,17 @@ class TUIApp:
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and msg.content:
                 # Skip if it's just tool call info
-                content = msg.content.strip()
+                content = msg.content
+                if isinstance(content, list):
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, str):
+                            text_parts.append(part)
+                        elif isinstance(part, dict) and "text" in part:
+                            text_parts.append(str(part["text"]))
+                    content = "".join(text_parts)
+
+                content = content.strip()
                 if content and not content.startswith("Tool call"):
                     console.print()
                     console.print("[bold green]Assistant:[/bold green]")
@@ -217,9 +308,7 @@ class TUIApp:
             return
 
         if event_type == "shell_finished":
-            render_shell_finished(
-                event.get("return_code", 0), event.get("status", "completed")
-            )
+            render_shell_finished(event.get("return_code", 0), event.get("status", "completed"))
             return
 
         # Tool started - show spinner
@@ -227,9 +316,7 @@ class TUIApp:
             call_id = event.get("call_id")
             if call_id:
                 with self._tool_event_lock:
-                    self._tool_event_start_times[call_id] = event.get(
-                        "timestamp", time.time()
-                    )
+                    self._tool_event_start_times[call_id] = event.get("timestamp", time.time())
                 spinner = start_tool_spinner(tool_name, event.get("args"))
                 self._active_spinners[call_id] = spinner
             return
@@ -260,19 +347,14 @@ class TUIApp:
                 worker=worker,
             )
 
-            # Show result preview
+            # Show result preview with syntax highlighting
             preview = event.get("result_preview")
             if event.get("status") == "completed" and preview:
-                from rich.markup import escape
-
-                for line in preview.split("\n")[:3]:  # Limit to 3 lines
-                    console.print(f"  [dim]{escape(line)}[/dim]")
+                render_tool_result_preview(preview, tool_name)
             return
 
         if event_type == "tool_rejected":
-            render_tool_execution(
-                tool_name, event.get("args"), status="rejected", worker=worker
-            )
+            render_tool_execution(tool_name, event.get("args"), status="rejected", worker=worker)
             return
 
     def _stop_all_spinners(self):
@@ -319,24 +401,24 @@ class TUIApp:
         )
 
         if choice == "y":
-            console.print(f"\n[green]✓ Approved[/green]")
+            console.print("\n[green]✓ Approved[/green]")
             return {"action": "approve"}
-        elif choice == "n":
+        if choice == "n":
             reason = Prompt.ask("[dim]Reason (optional)[/dim]", default="")
             console.print("\n[red]✗ Rejected[/red]")
             return {"action": "reject", "reason": reason}
-        else:  # "a"
-            console.print(f"\n[green]✓ Always allowing {tool_name}[/green]")
-            return {"action": "allow_pattern", "pattern": tool_name}
+        # "a"
+        console.print(f"\n[green]✓ Always allowing {tool_name}[/green]")
+        return {"action": "allow_pattern", "pattern": tool_name}
 
 
 def main():
     """Start TUI Application"""
     import asyncio
-    
+
     # Initialize MCP tools before starting the app
-    from ..agent.graph import initialize_mcp_tools
-    
+    from src.agent.graph import initialize_mcp_tools
+
     try:
         logger.info("Initializing MCP tools...")
         asyncio.run(initialize_mcp_tools())
@@ -344,7 +426,7 @@ def main():
     except Exception as e:
         logger.warning(f"Failed to initialize MCP tools: {e}")
         logger.warning("Continuing with built-in tools only")
-    
+
     app = TUIApp()
     app.run()
 
