@@ -3,9 +3,9 @@
     "allow": [
       "Bash(python test_agent.py:*)",
       "mcp__docs-langchain__SearchDocsByLangChain",
-      "Bash(python -m src.ui.app:*)",
-      "Bash(.venvScriptspython.exe -c \"from src.ui.app import TUIApp; print(''Import successful'')\")",
-      "Bash(\".venv\\Scripts\\python.exe\" -c \"from src.ui.app import TUIApp; print(''Import successful'')\")",
+      "Bash(python -m code_agent.ui.app:*)",
+      "Bash(.venvScriptspython.exe -c \"from code_agent.ui.app import TUIApp; print(''Import successful'')\")",
+      "Bash(\".venv\\Scripts\\python.exe\" -c \"from code_agent.ui.app import TUIApp; print(''Import successful'')\")",
       "Bash(\".venv\\Scripts\\python.exe\" -c \"from langchain_core.messages import ToolMessage; print(dir(ToolMessage))\")",
       "Bash(\".venv\\Scripts\\python.exe\" -c \"from langchain_core.messages import ToolMessage; msg = ToolMessage(content=''test'', tool_call_id=''123''); print([attr for attr in dir(msg) if not attr.startswith(''_'')])\")",
       "Bash(test:*)",
