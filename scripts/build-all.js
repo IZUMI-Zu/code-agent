@@ -11,7 +11,7 @@ const projects = [
   { path: 'baseline/gemini', urlPath: '/baseline/gemini' },
   { path: 'code-agent/claude-sonnet-4.5', urlPath: '/code-agent/claude-sonnet-4.5' },
   { path: 'code-agent/deepseek-v3', urlPath: '/code-agent/deepseek-v3' },
-  { path: 'code-agent/qwen3-coder-plus', urlPath: '/code-agent/qwen3-coder-plus' }
+  { path: 'code-agent/qwen3-coder-plus', urlPath: '/code-agent/qwen3-coder-plus', installFlags: '--legacy-peer-deps' }
 ];
 
 // Clean and create dist
@@ -79,7 +79,7 @@ projects.forEach(project => {
   
   // Install dependencies
   console.log('Installing dependencies...');
-  shell.exec('npm install --no-audit --no-fund', { silent: true });
+  shell.exec(`npm install --no-audit --no-fund ${project.installFlags || ''}`, { silent: true });
 
   // Build
   console.log('Building...');
