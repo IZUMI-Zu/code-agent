@@ -4,11 +4,9 @@ Design Philosophy:
   - Single Registry Point (Eliminate scattered tool definitions)
   - Lazy Initialization (Load on demand, save resources)
   - Type Safety (Avoid runtime errors)
-  - MCP Integration (Load tools from MCP servers)
 """
 
 from langchain_core.tools import (
-    BaseTool as LangChainBaseTool,
     StructuredTool,
 )
 
@@ -44,13 +42,10 @@ class ToolRegistry:
     Good Taste:
       - Access tools by name, no if/elif type checking
       - Unified initialization logic, eliminating duplicate code
-      - MCP tools loaded asynchronously on demand
     """
 
     def __init__(self):
         self._tools: dict[str, BaseTool] = {}
-        self._mcp_tools: list[LangChainBaseTool] = []
-        self._mcp_loaded: bool = False
         self._register_default_tools()
 
     def _register_default_tools(self):
@@ -113,62 +108,6 @@ class ToolRegistry:
         """Get all registered tools (Alias)"""
         return self.list_all()
 
-    async def load_mcp_tools(self, server_configs: dict | None = None):
-        """
-        Load tools from MCP servers
-
-        Args:
-            server_configs: Optional MCP server configurations
-                           If None, uses default config (fetch server)
-
-        Note:
-            - Only loads once (cached)
-            - Call reload_mcp_tools() to refresh
-        """
-        if self._mcp_loaded:
-            logger.info("MCP tools already loaded (using cache)")
-            return
-
-        try:
-            from .mcp_loader import load_mcp_tools
-
-            logger.info("Loading MCP tools...")
-            self._mcp_tools = await load_mcp_tools(server_configs)
-            self._mcp_loaded = True
-
-            logger.info(f"Loaded {len(self._mcp_tools)} MCP tools")
-
-        except ImportError:
-            logger.warning("langchain-mcp-adapters not installed. Install with: uv add langchain-mcp-adapters")
-        except Exception as e:
-            logger.error(f"Failed to load MCP tools: {e}")
-            logger.warning("Continuing without MCP tools")
-
-    async def reload_mcp_tools(self, server_configs: dict | None = None):
-        """
-        Reload MCP tools (clears cache)
-
-        Args:
-            server_configs: Optional MCP server configurations
-        """
-        self._mcp_loaded = False
-        self._mcp_tools = []
-        await self.load_mcp_tools(server_configs)
-
-    def get_all_tools_with_mcp(self) -> list:
-        """
-        Get all tools including MCP tools
-
-        Returns:
-            List of all tools (built-in + MCP)
-
-        Note:
-            - MCP tools must be loaded first with load_mcp_tools()
-            - Returns only built-in tools if MCP not loaded
-        """
-        built_in = self.list_all()
-        return built_in + self._mcp_tools
-
     def get_tool_descriptions(self) -> list[StructuredTool]:
         """
         Get descriptions of all tools (For LLM use)
@@ -182,22 +121,8 @@ class ToolRegistry:
             },
             ...
         ]
-
-        Note:
-            - Only returns built-in tools
-            - Use get_tool_descriptions_with_mcp() for MCP tools
         """
         return [tool.to_langchain_tool() for tool in self._tools.values()]
-
-    def get_tool_descriptions_with_mcp(self) -> list:
-        """
-        Get descriptions of all tools including MCP tools
-
-        Returns:
-            List of all tool descriptions (built-in + MCP)
-        """
-        built_in = self.get_tool_descriptions()
-        return built_in + self._mcp_tools
 
 
 # Global Singleton

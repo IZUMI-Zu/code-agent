@@ -10,7 +10,6 @@ A multi-agent code assistant powered by LangGraph, implementing intelligent task
 - **Workspace Isolation**: Pattern-based file access control
 - **Streaming Interaction**: Real-time display of tool execution and agent reasoning
 - **Cross-Platform File Operations**: Unified filesystem abstraction eliminating platform differences
-- **MCP Support**: Integration with Model Context Protocol for dynamic tool loading
 
 ## Quick Start
 
@@ -220,8 +219,7 @@ code-agent/
 │   │   ├── search.py         # Web search
 │   │   ├── planning.py       # Plan submission
 │   │   ├── edit.py           # File editing
-│   │   ├── grep.py           # Code search
-│   │   └── mcp_loader.py     # MCP integration
+│   │   └── grep.py           # Code search
 │   ├── ui/
 │   │   ├── app.py            # TUI main controller
 │   │   └── components.py     # UI components

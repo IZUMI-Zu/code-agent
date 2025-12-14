@@ -105,52 +105,11 @@ def create_worker(name: str, system_prompt: str, tools: list, middleware: list |
     return agent
 
 
-# Tool Loading (with MCP support)
-# MCP tools are loaded asynchronously on first use
-# This avoids blocking the module import
+# Tool Loading
 
 registry = get_registry()
 
-# MCP server configuration
-# You can customize this in your .env or config file
-MCP_SERVER_CONFIG = {
-    "fetch": {
-        "transport": "stdio",
-        "command": "uvx",
-        "args": ["mcp-server-fetch"],
-    }
-}
-
-
-def _get_tools_for_agent(include_mcp: bool = True):
-    """
-    Get tools for agents (with optional MCP tools)
-
-    Args:
-        include_mcp: Whether to include MCP tools
-
-    Returns:
-        List of LangChain tools
-    """
-    all_tools = registry.get_all_tools_with_mcp() if include_mcp else registry.get_all_tools()
-
-    # Convert to LangChain tools and wrap with confirmation
-    lc_tools = []
-    for tool in all_tools:
-        if hasattr(tool, "to_langchain_tool"):
-            # Built-in tool
-            lc_tool = tool.to_langchain_tool()
-            lc_tools.append(wrap_tool_with_confirmation(lc_tool))
-        else:
-            # MCP tool (already a LangChain tool)
-            # Type assertion: we know MCP tools are BaseTool instances
-            if isinstance(tool, BaseTool):
-                lc_tools.append(wrap_tool_with_confirmation(tool))
-
-    return lc_tools
-
-
-# Get initial tools (without MCP, loaded synchronously)
+# Get all tools and convert to LangChain tools
 all_tools = registry.get_all_tools()
 lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tools]
 
@@ -170,9 +129,6 @@ PLANNER_ALLOWED_TOOLS = {
     # Planning tools
     "submit_plan",
     "web_search",
-    # MCP tools (if loaded)
-    "fetch",
-    "fetch_html",
 }
 lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
 
@@ -732,46 +688,6 @@ Your job is to VERIFY the implementation:
     workflow.add_edge("Reviewer", "Supervisor")
 
     return workflow.compile(checkpointer=MemorySaver())
-
-
-# Async Initialization (for MCP tools)
-
-
-async def initialize_mcp_tools():
-    """
-    Initialize MCP tools asynchronously
-
-    This should be called once at application startup.
-    After calling this, agents will have access to MCP tools.
-
-    Example:
-        >>> import asyncio
-        >>> asyncio.run(initialize_mcp_tools())
-    """
-    global lc_tools, lc_tools_for_planner, lc_tools_for_coder, lc_tools_for_reviewer
-
-    try:
-        logger.info("Initializing MCP tools...")
-
-        # Load MCP tools
-        await registry.load_mcp_tools(MCP_SERVER_CONFIG)
-
-        # Refresh tool lists
-        lc_tools = _get_tools_for_agent(include_mcp=True)
-
-        # Update agent-specific tool lists
-        lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
-        lc_tools_for_coder = [t for t in lc_tools if t.name != "submit_plan"]
-        lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
-
-        logger.info(f"MCP tools initialized. Total tools: {len(lc_tools)}")
-        logger.info(f"  Planner: {len(lc_tools_for_planner)} tools")
-        logger.info(f"  Coder: {len(lc_tools_for_coder)} tools")
-        logger.info(f"  Reviewer: {len(lc_tools_for_reviewer)} tools")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize MCP tools: {e}")
-        logger.warning("Continuing with built-in tools only")
 
 
 # Export global Agent

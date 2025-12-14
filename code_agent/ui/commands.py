@@ -65,7 +65,7 @@ def _cmd_tools() -> str:
     console.print("\n[bold cyan]Available Tools:[/bold cyan]\n")
 
     registry = get_registry()
-    tools = registry.get_all_tools_with_mcp()
+    tools = registry.get_all_tools()
 
     # Group tools by category (heuristic based on name patterns)
     categories = {
@@ -77,7 +77,6 @@ def _cmd_tools() -> str:
         "Planning": [],
         "Sub-Agent": [],
         "External": [],
-        "MCP": [],
     }
 
     for tool in tools:
@@ -97,8 +96,6 @@ def _cmd_tools() -> str:
             categories["Shell"].append((name, desc))
         elif "plan" in name:
             categories["Planning"].append((name, desc))
-        elif hasattr(tool, "__class__") and "MCP" in tool.__class__.__name__:
-            categories["MCP"].append((name, desc))
         else:
             categories["External"].append((name, desc))
 

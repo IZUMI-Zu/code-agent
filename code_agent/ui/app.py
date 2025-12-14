@@ -460,19 +460,6 @@ class TUIApp:
 
 def main():
     """Start TUI Application"""
-    import asyncio
-
-    # Initialize MCP tools before starting the app
-    from code_agent.agent.graph import initialize_mcp_tools
-
-    try:
-        logger.info("Initializing MCP tools...")
-        asyncio.run(initialize_mcp_tools())
-        logger.info("MCP tools initialized successfully")
-    except Exception as e:
-        logger.warning(f"Failed to initialize MCP tools: {e}")
-        logger.warning("Continuing with built-in tools only")
-
     app = TUIApp()
     app.run()
 
