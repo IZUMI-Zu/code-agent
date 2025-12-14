@@ -15,23 +15,15 @@ from rich.text import Text
 # Global Console Instance & Color Palette
 console = Console()
 
-# Claude Code 风格配色方案 (柔和、低饱和度)
 COLORS = {
-    # 主色调 - 紫蓝色系 (用于强调关键信息)
-    "primary": "bright_blue",
-    "secondary": "bright_magenta",
-    "accent": "bright_cyan",
-    # 语义色 - 降低视觉冲击
+    "primary": "bright_blue",  # Indigo/Blue
+    "secondary": "bright_cyan",  # Cyan/Sky
+    "accent": "bright_magenta",  # Purple
     "success": "green",
     "warning": "yellow",
     "error": "red",
-    # Agent 标识色 (柔和区分不同 Agent)
-    "planner": "bright_magenta",
-    "coder": "bright_cyan",
-    "reviewer": "bright_yellow",
-    # 灰度层次 (信息优先级分级)
     "text": "white",
-    "dim": "bright_black",
+    "dim": "bright_black",  # Slate-ish
     "dimmer": "dim",
 }
 
@@ -61,21 +53,15 @@ ICONS = {
 # Streaming Text Renderer
 
 
-class StreamingText:
+class StreamingPanel:
     """
-    Real-time streaming text renderer for AI responses
+    Real-time streaming panel with timeline layout
 
     Design Philosophy:
-      - Token-by-token rendering for immediate feedback
-      - Use Rich Live for flicker-free updates
-      - Final Markdown render replaces streaming text (no duplication)
-
-    Usage:
-        streaming = StreamingText()
-        streaming.start()
-        for token in tokens:
-            streaming.append(token)
-        streaming.finish()
+      - Uses Table.grid to enforce indentation (timeline style)
+      - Left column: Timeline line │
+      - Right column: Markdown text (auto-wrapping)
+      - Uses Live for flicker-free updates
     """
 
     def __init__(self):
@@ -85,13 +71,33 @@ class StreamingText:
 
     def start(self):
         """Start the streaming display"""
+        # Initial empty table
+        grid = self._create_grid("")
+
         self._live = Live(
-            Text(""),
+            grid,
             console=console,
             refresh_per_second=15,
             vertical_overflow="visible",
         )
         self._live.start()
+
+    def _create_grid(self, content: str) -> Table:
+        """Create the layout grid with timeline"""
+        grid = Table.grid(padding=(0, 1))
+        grid.add_column(style="dim", width=3, justify="left")  # │ column
+        grid.add_column(style="white")  # Content column
+
+        # If content is empty, just show the line
+        if not content:
+            grid.add_row(ICONS["timeline"], "")
+        else:
+            # Render content as Markdown for nice formatting & wrapping
+            # Note: Markdown will handle wrapping within the column width automatically
+            md = Markdown(content)
+            grid.add_row(ICONS["timeline"], md)
+
+        return grid
 
     def append(self, token: str):
         """Append a token to the stream"""
@@ -101,22 +107,20 @@ class StreamingText:
         self._buffer += token
 
         if self._live:
-            # During streaming, show plain text for speed
-            # Markdown parsing on every token is too slow
-            self._live.update(Text(self._buffer))
+            # Update Live with new grid containing updated Markdown
+            self._live.update(self._create_grid(self._buffer))
 
     def finish(self):
-        """Finish streaming and render final markdown (replaces streaming text)"""
+        """Finish streaming"""
         if self._finished:
             return
 
         self._finished = True
 
         if self._live:
-            # Update Live with final Markdown before stopping
-            # This replaces the plain text with formatted Markdown
+            # Final update
             if self._buffer.strip():
-                self._live.update(Markdown(self._buffer))
+                self._live.update(self._create_grid(self._buffer))
             self._live.stop()
             self._live = None
 
@@ -184,11 +188,51 @@ def render_welcome() -> None:
     Good Taste: 只显示必要信息, 节省空间
     """
     console.print()
-    console.print(f"[bold {COLORS['primary']}]TUI Code Agent[/bold {COLORS['primary']}]")
-    console.print(f"[{COLORS['dimmer']}]An intelligent multi-agent system powered by LangGraph[/{COLORS['dimmer']}]")
+
+    # Modern Header
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column()
+
+    grid.add_row(f"[bold {COLORS['primary']}]TUI Code Agent[/bold {COLORS['primary']}]")
+    grid.add_row("[dim]An intelligent multi-agent system powered by LangGraph[/dim]")
+
+    console.print(grid)
     console.print()
-    console.print("[dim]Type your request or use [cyan]/help[/cyan] for commands[/dim]")
+
+    # Hints
+    console.print("[dim]Type your request or use [cyan]/help[/cyan] to see available commands[/dim]")
     console.print()
+
+
+def render_agent_header(worker_name: str) -> None:
+    """
+    Render agent header with timeline
+    """
+    # Agent 标识 (Timeline 风格, 聊天气泡)
+    agent_icons = {
+        "Planner": "📋",
+        "Coder": "💻",
+        "Reviewer": "🔍",
+    }
+    agent_colors = {
+        "Planner": "bright_magenta",
+        "Coder": "bright_cyan",
+        "Reviewer": "bright_yellow",
+    }
+
+    icon = agent_icons.get(worker_name, "💭")
+    color = agent_colors.get(worker_name, "white")
+
+    # Timeline spacing
+    console.print()
+
+    # Header line
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=3)  # │
+    grid.add_column()
+
+    grid.add_row(ICONS["timeline"], f"[bold {color}]{icon} {worker_name}[/bold {color}]")
+    console.print(grid)
 
 
 # Status Indicator
@@ -279,20 +323,28 @@ def render_tool_execution(
     if duration is not None and status in ["completed", "failed", "control_flow"]:
         duration_text = f"[dim]({duration:.2f}s)[/dim]"
 
-    # 组装主行
-    line = f"[dim]│[/dim]  [{action_color}]{icon} {action_verb}[/{action_color}] {worker_prefix}[bold]{escape(tool_name)}[/bold]"
-
+    # 组装内容
+    content = f"[{action_color}]{icon} {action_verb}[/{action_color}] {worker_prefix}[bold]{escape(tool_name)}[/bold]"
     if args_text:
-        line += f" {args_text}"
-
+        content += f" {args_text}"
     if duration_text:
-        line += f" {duration_text}"
+        content += f" {duration_text}"
 
-    console.print(line)
+    # Use Table for indentation
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=3)  # │ + 2 spaces
+    grid.add_column()  # Content
+
+    grid.add_row(ICONS["timeline"], content)
+    console.print(grid)
 
     # 错误信息(如果有)
     if status == "failed" and error:
-        console.print(f"[dim]│[/dim]     [{COLORS['error']}]└─ Error: {escape(error)}[/{COLORS['error']}]")
+        error_grid = Table.grid(padding=(0, 1))
+        error_grid.add_column(style="dim", width=5)  # │ + 4 spaces
+        error_grid.add_column()
+        error_grid.add_row(ICONS["timeline"], f"[{COLORS['error']}]└─ Error: {escape(error)}[/{COLORS['error']}]")
+        console.print(error_grid)
 
 
 def render_tool_result_preview(result_preview: str, tool_name: str | None = None) -> None:
@@ -326,15 +378,27 @@ def render_tool_result_preview(result_preview: str, tool_name: str | None = None
     has_more = len(lines) > 5
 
     # Timeline 风格输出(扁平化)
-    console.print(f"[dim]{ICONS['timeline']}[/dim]     [dim]└─ {ICONS['preview']} Preview:[/dim]")
+    # Header
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=5)
+    grid.add_column()
+    grid.add_row(ICONS["timeline"], f"[dim]└─ {ICONS['preview']} Preview:[/dim]")
+    console.print(grid)
 
-    # 缩进显示每行
+    # Content
     for line in preview_lines:
-        if line.strip():
-            console.print(f"[dim]{ICONS['timeline']}[/dim]        [dim]{escape(line)}[/dim]")
+        line_grid = Table.grid(padding=(0, 1))
+        line_grid.add_column(style="dim", width=8)  # Indent 8
+        line_grid.add_column()
+        line_grid.add_row(ICONS["timeline"], f"[dim]{escape(line)}[/dim]")
+        console.print(line_grid)
 
     if has_more:
-        console.print(f"[dim]{ICONS['timeline']}[/dim]        [dim]... [{len(lines) - 5} more lines][/dim]")
+        more_grid = Table.grid(padding=(0, 1))
+        more_grid.add_column(style="dim", width=8)
+        more_grid.add_column()
+        more_grid.add_row(ICONS["timeline"], f"[dim]... [{len(lines) - 5} more lines][/dim]")
+        console.print(more_grid)
 
 
 def _format_args_preview(args: Any, max_length: int = 60) -> str:
@@ -425,12 +489,22 @@ def render_shell_start(command: str, cwd: str | None = None) -> None:
     Good Taste: 移除 Panel, 使用垂直线连接
     """
     # Timeline 格式: │  $ command(扁平化)
-    console.print(
-        f"[dim]{ICONS['timeline']}[/dim]  [bold bright_cyan]{ICONS['shell']} Shell[/bold bright_cyan] [bold]$ {escape(command)}[/bold]"
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=3)  # │ + 2 spaces
+    grid.add_column()
+
+    grid.add_row(
+        ICONS["timeline"],
+        f"[bold bright_cyan]{ICONS['shell']} Shell[/bold bright_cyan] [bold]$ {escape(command)}[/bold]",
     )
+    console.print(grid)
 
     if cwd and cwd != ".":
-        console.print(f"[dim]{ICONS['timeline']}[/dim]     [dim]└─ {ICONS['directory']} {escape(cwd)}[/dim]")
+        cwd_grid = Table.grid(padding=(0, 1))
+        cwd_grid.add_column(style="dim", width=5)  # │ + 4 spaces
+        cwd_grid.add_column()
+        cwd_grid.add_row(ICONS["timeline"], f"[dim]└─ {ICONS['directory']} {escape(cwd)}[/dim]")
+        console.print(cwd_grid)
 
 
 def render_shell_output(line: str, stream: str = "stdout") -> None:
@@ -439,10 +513,16 @@ def render_shell_output(line: str, stream: str = "stdout") -> None:
 
     Good Taste: 缩进输出, 保持时间线连续
     """
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=8)  # Indent 8
+    grid.add_column()
+
     if stream == "stderr":
-        console.print(f"[dim]{ICONS['timeline']}[/dim]        [{COLORS['error']}]{escape(line)}[/{COLORS['error']}]")
+        grid.add_row(ICONS["timeline"], f"[{COLORS['error']}]{escape(line)}[/{COLORS['error']}]")
     else:
-        console.print(f"[dim]{ICONS['timeline']}[/dim]        [dim]{escape(line)}[/dim]")
+        grid.add_row(ICONS["timeline"], f"[dim]{escape(line)}[/dim]")
+
+    console.print(grid)
 
 
 def render_shell_finished(return_code: int = 0, status: str = "completed") -> None:
@@ -451,18 +531,23 @@ def render_shell_finished(return_code: int = 0, status: str = "completed") -> No
 
     Good Taste: 简洁的状态行, 不打断时间线
     """
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(style="dim", width=5)  # Indent 5
+    grid.add_column()
+
     if status == "completed" and return_code == 0:
-        console.print(
-            f"[dim]{ICONS['timeline']}[/dim]     [{COLORS['success']}]{ICONS['success']} Completed (exit code: {return_code})[/{COLORS['success']}]"
+        grid.add_row(
+            ICONS["timeline"],
+            f"[{COLORS['success']}]{ICONS['success']} Completed (exit code: {return_code})[/{COLORS['success']}]",
         )
     elif status == "timeout":
-        console.print(
-            f"[dim]{ICONS['timeline']}[/dim]     [{COLORS['warning']}]{ICONS['warning']} Timed out[/{COLORS['warning']}]"
-        )
+        grid.add_row(ICONS["timeline"], f"[{COLORS['warning']}]{ICONS['warning']} Timed out[/{COLORS['warning']}]")
     else:
-        console.print(
-            f"[dim]{ICONS['timeline']}[/dim]     [{COLORS['error']}]{ICONS['error']} Failed (exit code: {return_code})[/{COLORS['error']}]"
+        grid.add_row(
+            ICONS["timeline"],
+            f"[{COLORS['error']}]{ICONS['error']} Failed (exit code: {return_code})[/{COLORS['error']}]",
         )
+    console.print(grid)
 
 
 # Confirmation Dialog

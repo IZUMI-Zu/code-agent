@@ -1,5 +1,4 @@
-"""
-TUI Application Main Controller
+"""TUI Application Main Controller
 Design: Claude Code style
   - Tool calls displayed in real-time during execution
   - Agent's final response displayed after all tools complete
@@ -22,8 +21,11 @@ from code_agent.agent.graph import agent_graph
 from code_agent.utils.event_bus import drain_tool_events
 from code_agent.utils.logger import logger
 
+from .commands import SlashCommandCompleter, execute_command
 from .components import (
+    StreamingPanel,
     console,
+    render_agent_header,
     render_separator,
     render_shell_finished,
     render_shell_output,
@@ -47,13 +49,18 @@ class TUIApp:
         self.graph = agent_graph
         self.thread_id = str(uuid.uuid4())
         self.config = cast("RunnableConfig", {"configurable": {"thread_id": self.thread_id}})
-        self.session = PromptSession()
+        self.session = PromptSession(completer=SlashCommandCompleter())
         self._tool_event_start_times = {}
         self._active_spinners = {}
+        self._thinking_status = None
         self._tool_event_lock = threading.Lock()
+        self._spinner_lock = threading.Lock()
         self._event_stop = threading.Event()
         self._event_thread = threading.Thread(target=self._tool_event_consumer, daemon=True)
         self._event_thread.start()
+        # Track current streaming panel to prevent concurrent console writes
+        self._current_streaming_panel = None
+        self._streaming_panel_lock = threading.Lock()
         logger.info(f"TUI Application initialized with thread_id: {self.thread_id}")
 
     def _create_key_bindings(self):
@@ -88,18 +95,14 @@ class TUIApp:
                         ),
                     )
 
-                    if user_input.lower().strip() in ["exit", "quit", "q"]:
-                        console.print("\n[yellow]Goodbye! 👋[/yellow]\n")
-                        break
-
-                    if user_input.lower().strip() == "clear":
-                        console.clear()
-                        render_welcome()
-                        continue
-
+                    # 空输入检查
                     if not user_input.strip():
                         continue
-
+                    cmd_result = execute_command(user_input)
+                    if cmd_result == "exit":
+                        break
+                    if cmd_result:
+                        continue
                     self._handle_user_input(user_input)
                     render_separator()
 
@@ -115,6 +118,25 @@ class TUIApp:
         finally:
             self._shutdown_event_thread()
 
+    def _start_thinking(self, message: str = "Processing"):
+        """Start the main thinking spinner safely"""
+        with self._spinner_lock:
+            # Don't start thinking if we are streaming text
+            with self._streaming_panel_lock:
+                if self._current_streaming_panel and not self._current_streaming_panel._finished:
+                    return
+
+            if self._thinking_status:
+                return
+            self._thinking_status = show_thinking(message)
+
+    def _stop_thinking(self):
+        """Stop the main thinking spinner safely"""
+        with self._spinner_lock:
+            if self._thinking_status:
+                self._thinking_status.stop()
+                self._thinking_status = None
+
     def _handle_user_input(self, user_input: str):
         """
         Handle user input - Timeline style:
@@ -129,8 +151,11 @@ class TUIApp:
         console.print("[dim]│[/dim]")
 
         user_message = HumanMessage(content=user_input)
-        progress = show_thinking("Processing")
+        self._start_thinking("Processing")
         input_payload = {"messages": [user_message]}
+
+        # Streaming Panel instance
+        streaming_panel = None
 
         try:
             while True:
@@ -156,9 +181,7 @@ class TUIApp:
                             continue  # Skip non-tuple items
 
                         # Stop spinner on first token
-                        if progress:
-                            progress.stop()
-                            progress = None
+                        self._stop_thinking()
 
                         # Filter streaming messages for clean UX (Good Taste)
                         # Architecture: Use metadata to understand structure, not content to guess
@@ -184,40 +207,54 @@ class TUIApp:
                         if worker_name and node_type == "model":
                             # Print worker header on first token from new worker
                             if worker_name != current_node:
-                                if current_node:  # Add spacing between workers
-                                    console.print()
-                                    console.print("[dim]│[/dim]")
+                                # Finish previous stream if active
+                                if streaming_panel:
+                                    streaming_panel.finish()
+                                    with self._streaming_panel_lock:
+                                        self._current_streaming_panel = None
+                                    streaming_panel = None
+
                                 current_node = worker_name
+                                render_agent_header(worker_name)
 
-                                # Agent 标识 (Timeline 风格, 聊天气泡)
-                                agent_icons = {
-                                    "Planner": "📋",
-                                    "Coder": "💻",
-                                    "Reviewer": "🔍",
-                                }
-                                agent_colors = {
-                                    "Planner": "bright_magenta",
-                                    "Coder": "bright_cyan",
-                                    "Reviewer": "bright_yellow",
-                                }
-                                icon = agent_icons.get(worker_name, "💭")
-                                agent_color = agent_colors.get(worker_name, "green")
+                                # Start new streaming panel for this agent
+                                streaming_panel = StreamingPanel()
+                                streaming_panel.start()
 
+                            # Good Taste: 如果 panel 被工具事件中断,自动恢复
+                            # Restart panel if it was finished by tool events
+                            elif not streaming_panel or streaming_panel._finished:
+                                # Add newline before starting new panel to separate from tool output
                                 console.print()
-                                console.print(f"[bold {agent_color}]{icon} {worker_name}:[/bold {agent_color}]")
+                                streaming_panel = StreamingPanel()
+                                streaming_panel.start()
 
                             # Stream token output (chat bubble style, 左边框)
                             # No content filtering needed - node type already ensures clean output
-                            if hasattr(chunk, "content") and chunk.content:
-                                # 为每个 token 添加左边框 (如果是新行)
-                                for char in chunk.content:
-                                    console.print(char, end="", markup=False)
+                            if hasattr(chunk, "content") and chunk.content and streaming_panel:
+                                # Append text instead of raw printing
+                                # StreamingPanel handles the Table structure and Markdown rendering
+                                streaming_panel.append(chunk.content)
+                                # Track active panel for tool event coordination
+                                with self._streaming_panel_lock:
+                                    self._current_streaming_panel = streaming_panel
+
+                    # Finish streaming when done
+                    if streaming_panel:
+                        streaming_panel.finish()
+                        with self._streaming_panel_lock:
+                            self._current_streaming_panel = None
+                        streaming_panel = None
 
                     # Add final newline after streaming completes
                     if current_node:
                         console.print()
 
                 except KeyboardInterrupt:
+                    if streaming_panel:
+                        streaming_panel.finish()
+                        with self._streaming_panel_lock:
+                            self._current_streaming_panel = None
                     # User pressed Ctrl+C during streaming
                     console.print("\n\n[yellow]⚠ Execution interrupted by user[/yellow]")
                     raise  # Re-raise to outer handler
@@ -227,7 +264,6 @@ class TUIApp:
 
                 # Timeline 结束标记
                 console.print("[dim]│[/dim]")
-
                 # Check for interrupts (tool confirmations)
                 snapshot = self.graph.get_state(self.config)
                 if snapshot.next:
@@ -236,14 +272,13 @@ class TUIApp:
                         interrupt_value = tasks[0].interrupts[0].value
                         decision = self._handle_interrupt(interrupt_value)
                         input_payload = Command(resume=decision)
-                        progress = show_thinking("Continuing")
+                        self._start_thinking("Continuing")
                         continue
 
                 break
 
         finally:
-            if progress:
-                progress.stop()
+            self._stop_thinking()
             self._flush_tool_events()
 
     def _display_final_response(self, state):
@@ -290,7 +325,16 @@ class TUIApp:
             self._process_tool_event(event)
 
     def _process_tool_event(self, event):
-        """Process and display a single tool event"""
+        """
+        Process and display a single tool event
+        """
+        with self._streaming_panel_lock:
+            if self._current_streaming_panel and not self._current_streaming_panel._finished:
+                # Finish current stream to allow clean tool event rendering
+                # If LLM continues streaming after tool execution, a new panel will be created
+                self._current_streaming_panel.finish()
+                self._current_streaming_panel = None
+
         event_type = event.get("event_type")
         tool_name = event.get("tool", "Unknown")
         worker = event.get("worker")
@@ -307,6 +351,7 @@ class TUIApp:
 
         if event_type == "shell_finished":
             render_shell_finished(event.get("return_code", 0), event.get("status", "completed"))
+            self._start_thinking()
             return
 
         # Tool started - show spinner
@@ -349,10 +394,13 @@ class TUIApp:
             preview = event.get("result_preview")
             if event.get("status") == "completed" and preview:
                 render_tool_result_preview(preview, tool_name)
+
+            self._start_thinking()
             return
 
         if event_type == "tool_rejected":
             render_tool_execution(tool_name, event.get("args"), status="rejected", worker=worker)
+            self._start_thinking()
             return
 
     def _stop_all_spinners(self):
