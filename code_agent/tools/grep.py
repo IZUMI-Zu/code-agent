@@ -15,6 +15,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from code_agent.utils.logger import logger
+from code_agent.utils.path import resolve_workspace_path
 
 from .base import BaseTool
 
@@ -78,23 +79,33 @@ Examples:
     def _run(self, **kwargs) -> str:
         """Execute grep search"""
         pattern = kwargs["pattern"]
-        path = kwargs.get("path", ".")
+        path_input = kwargs.get("path", ".")
         case_sensitive = kwargs.get("case_sensitive", False)
         file_pattern = kwargs.get("file_pattern")
         max_results = kwargs.get("max_results", 50)
+
+        # Resolve path to absolute workspace path
+        try:
+            resolved_path = resolve_workspace_path(path_input)
+        except ValueError as e:
+            return f"Path error: {e}"
+
+        # Verify path exists
+        if not resolved_path.exists():
+            return f"Path not found: {path_input}"
 
         # Check if ripgrep is available
         has_ripgrep = shutil.which("rg") is not None
 
         if has_ripgrep:
-            return self._ripgrep_search(pattern, path, case_sensitive, file_pattern, max_results)
+            return self._ripgrep_search(pattern, resolved_path, case_sensitive, file_pattern, max_results)
         logger.warning("ripgrep not found, using Python fallback (slower)")
-        return self._python_grep(pattern, path, case_sensitive, file_pattern, max_results)
+        return self._python_grep(pattern, resolved_path, case_sensitive, file_pattern, max_results)
 
     def _ripgrep_search(
         self,
         pattern: str,
-        path: str,
+        path: Path,
         case_sensitive: bool,
         file_pattern: str | None,
         max_results: int,
@@ -113,8 +124,8 @@ Examples:
         # Max results
         cmd.extend(["--max-count", str(max_results)])
 
-        # Pattern and path
-        cmd.extend([pattern, path])
+        # Pattern and path (use absolute path)
+        cmd.extend([pattern, str(path)])
 
         try:
             result = subprocess.run(
@@ -158,7 +169,7 @@ Examples:
     def _python_grep(
         self,
         pattern: str,
-        path: str,
+        path: Path,
         case_sensitive: bool,
         file_pattern: str | None,
         max_results: int,
@@ -169,8 +180,8 @@ Examples:
             flags = 0 if case_sensitive else re.IGNORECASE
             regex = re.compile(pattern, flags)
 
-            # Get files to search
-            search_path = Path(path)
+            # Get files to search (path is already a Path object)
+            search_path = path
             if search_path.is_file():
                 files = [search_path]
             else:
