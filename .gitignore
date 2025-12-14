@@ -46,3 +46,5 @@ playground/
 
 GEMINI.md
 .claude/
+
+node_modules/
