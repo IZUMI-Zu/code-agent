@@ -5,11 +5,6 @@ Architecture:
   - Planner: Project planning
   - Coder: Code generation
   - Reviewer: Code review
-
-Streaming Design (Best Practice):
-  - Worker nodes use regular functions (not generators)
-  - LLM calls use model.invoke() - LangChain auto-enables streaming
-  - External stream_mode="messages" captures token-level output
 """
 
 import json
@@ -18,7 +13,6 @@ from typing import Literal
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
-from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -81,12 +75,6 @@ def trim_messages(messages: list, max_tokens: int = 8000, keep_last: int = 20):
 def get_model(task_type: Literal["lightweight", "reasoning"] = "reasoning"):
     """
     Get model instance based on task complexity
-
-    Architecture: Model Stratification (Claude Code pattern)
-    - lightweight: Fast, cheap models for simple checks (topic detection, validation)
-    - reasoning: Powerful models for complex tasks (planning, coding, reviewing)
-
-    Performance gain: 3-5x faster for lightweight tasks, 70% cost reduction
     """
     model_name = settings.lightweight_model if task_type == "lightweight" else settings.reasoning_model
     return ChatOpenAI(
@@ -220,10 +208,6 @@ def supervisor_node(state: AgentState):
                 count += 1
         return count
 
-    # Safety Warning: High iteration count (soft limit, not forced termination)
-    # Good Taste: Let the task complete naturally (review_status="passed")
-    # rather than forcing termination. max_iterations is a WARNING, not a HARD LIMIT.
-    # User can always Ctrl+C if truly stuck.
     if iteration_count >= max_iterations:
         logger.error(
             f"Supervisor: Max iterations reached ({iteration_count}/{max_iterations}). "

@@ -55,12 +55,6 @@ class BraveSearchTool(BaseTool):
     def _run(self, query: str, count: int = 5) -> str:
         """
         Execute web search with timeout and retry support
-
-        Design Philosophy:
-          - Network errors raise RetryableError (automatic retry)
-          - Configuration errors fail immediately (no retry)
-          - Timeouts are enforced at HTTP level
-          - Rate limiting: 1 request per second
         """
         if not self.api_key:
             # Configuration error - not retryable

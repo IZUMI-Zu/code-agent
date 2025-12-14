@@ -11,9 +11,7 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None
     brave_api_key: SecretStr | None = None
 
-    # Model Stratification (Claude Code Architecture)
     # Use lightweight models for simple checks, heavyweight for reasoning
-    # Performance: lightweight is 3-5x faster, 70% cheaper
     lightweight_model: str = "gpt-4o-mini"
     reasoning_model: str = "gpt-4o"
 

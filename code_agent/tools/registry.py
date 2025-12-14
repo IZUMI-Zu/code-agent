@@ -1,9 +1,5 @@
 """
 Tool Registry - Centralized Tool Management
-Design Philosophy:
-  - Single Registry Point (Eliminate scattered tool definitions)
-  - Lazy Initialization (Load on demand, save resources)
-  - Type Safety (Avoid runtime errors)
 """
 
 from langchain_core.tools import (
@@ -32,16 +28,10 @@ from .planning import SubmitPlanTool
 from .search import BraveSearchTool
 from .shell import ProcessManagementTool, ShellTool
 
-# Tool Registry (Singleton Pattern)
-
 
 class ToolRegistry:
     """
     Global Tool Registry
-
-    Good Taste:
-      - Access tools by name, no if/elif type checking
-      - Unified initialization logic, eliminating duplicate code
     """
 
     def __init__(self):
@@ -51,11 +41,6 @@ class ToolRegistry:
     def _register_default_tools(self):
         """
         Register built-in tools
-
-        Good Taste:
-          - Cross-platform filesystem tools come first
-          - Shell tool is still available for advanced use
-          - Tools are organized by category
         """
         default_tools = [
             # File I/O (Basic)

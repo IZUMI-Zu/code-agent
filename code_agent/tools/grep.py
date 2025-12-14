@@ -1,9 +1,5 @@
 """
 Grep Tool - Fast Code Search with ripgrep
-Design Philosophy:
-  - Use ripgrep for blazing fast search
-  - Fallback to Python's grep if ripgrep not available
-  - Return structured results with context
 """
 
 import os

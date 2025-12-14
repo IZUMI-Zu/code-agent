@@ -1,7 +1,5 @@
-"""TUI Application Main Controller
-Design: Claude Code style
-  - Tool calls displayed in real-time during execution
-  - Agent's final response displayed after all tools complete
+"""
+TUI Application Main Controller
 """
 
 import threading
@@ -95,7 +93,6 @@ class TUIApp:
                         ),
                     )
 
-                    # 空输入检查
                     if not user_input.strip():
                         continue
                     cmd_result = execute_command(user_input)
@@ -146,7 +143,6 @@ class TUIApp:
         """
         logger.info(f"User input: {user_input}")
 
-        # Timeline 开始标记
         console.print()
         console.print("[dim]│[/dim]")
 
@@ -168,7 +164,7 @@ class TUIApp:
                         cast("Any", input_payload),
                         config=self.config,
                         stream_mode="messages",
-                        subgraphs=True,  # ✅ Enable subgraph token streaming
+                        subgraphs=True,
                     ):
                         # Unpack nested tuple: (namespace, (chunk, metadata))
                         if isinstance(item, tuple) and len(item) == 2:
@@ -182,12 +178,6 @@ class TUIApp:
 
                         # Stop spinner on first token
                         self._stop_thinking()
-
-                        # Filter streaming messages for clean UX (Good Taste)
-                        # Architecture: Use metadata to understand structure, not content to guess
-                        #
-                        # Only show: LLM thinking from worker agents (Planner/Coder/Reviewer)
-                        # Skip: tool nodes, supervisor, malformed messages
 
                         # Extract metadata
                         node_type = metadata.get("langgraph_node", "")
@@ -221,7 +211,6 @@ class TUIApp:
                                 streaming_panel = StreamingPanel()
                                 streaming_panel.start()
 
-                            # Good Taste: 如果 panel 被工具事件中断,自动恢复
                             # Restart panel if it was finished by tool events
                             elif not streaming_panel or streaming_panel._finished:
                                 # Add newline before starting new panel to separate from tool output
@@ -229,7 +218,7 @@ class TUIApp:
                                 streaming_panel = StreamingPanel()
                                 streaming_panel.start()
 
-                            # Stream token output (chat bubble style, 左边框)
+                            # Stream token output
                             # No content filtering needed - node type already ensures clean output
                             if hasattr(chunk, "content") and chunk.content and streaming_panel:
                                 # Append text instead of raw printing
@@ -262,7 +251,6 @@ class TUIApp:
                 # Flush any remaining tool events
                 self._flush_tool_events()
 
-                # Timeline 结束标记
                 console.print("[dim]│[/dim]")
                 # Check for interrupts (tool confirmations)
                 snapshot = self.graph.get_state(self.config)

@@ -1,13 +1,5 @@
 """
 Filesystem Tools - Cross-Platform Abstraction
-Design Philosophy:
-    - Good Taste: Hide platform differences, provide unified interface
-    - Simplicity: Each tool does ONE thing (create dir, copy file, etc.)
-    - Pragmatism: Use Python stdlib, no external dependencies needed
-
-Good Code vs Bad Code:
-    ❌ Bad: Expose 'mkdir -p' vs 'mkdir' difference to Agent
-    ✅ Good: Provide create_directory() that works everywhere
 """
 
 import shutil
@@ -28,12 +20,7 @@ class CreateDirectoryArgs(BaseModel):
 
 class CreateDirectoryTool(BaseTool):
     """
-    Create directory (cross-platform)
-
-    Good Taste:
-      - Single line of implementation: Path.mkdir(parents=True, exist_ok=True)
-      - No special cases for Windows/Linux/Mac
-      - No shell commands, pure Python
+    Create directory
     """
 
     def __init__(self):
@@ -72,12 +59,7 @@ class CopyFileArgs(BaseModel):
 
 class CopyFileTool(BaseTool):
     """
-    Copy file (cross-platform)
-
-    Good Taste:
-      - Use shutil.copy2 (preserves metadata)
-      - Handles both file-to-file and file-to-directory
-      - No shell commands needed
+    Copy file
     """
 
     def __init__(self):
@@ -118,12 +100,7 @@ class MoveFileArgs(BaseModel):
 
 class MoveFileTool(BaseTool):
     """
-    Move/rename file (cross-platform)
-
-    Good Taste:
-      - Single shutil.move() call
-      - Works across drives on Windows
-      - Handles both files and directories
+    Move/rename file
     """
 
     def __init__(self):
@@ -157,12 +134,7 @@ class DeletePathArgs(BaseModel):
 
 class DeletePathTool(BaseTool):
     """
-    Delete file or directory (cross-platform)
-
-    Good Taste:
-      - Unified deletion API (no rm vs del difference)
-      - Safe by default (recursive=False)
-      - Clear error messages
+    Delete file or directory
     """
 
     def __init__(self):
@@ -208,10 +180,6 @@ class PathExistsArgs(BaseModel):
 class PathExistsTool(BaseTool):
     """
     Check if path exists
-
-    Good Taste:
-      - Simple boolean check
-      - Returns structured info (exists + type)
     """
 
     def __init__(self):

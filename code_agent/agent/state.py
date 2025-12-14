@@ -1,9 +1,5 @@
 """
-Agent State Definition - Single Source of Truth for Data Flow
-Design Philosophy:
-  - Immutability: Clear and traceable state transitions
-  - No Special Cases: All messages follow a unified structure
-  - Simplicity: Store only necessary data, avoid redundancy
+Agent State Definition
 """
 
 from collections.abc import Sequence
@@ -19,11 +15,6 @@ from pydantic import BaseModel, Field
 class Task(BaseModel):
     """
     Enhanced task model with dependencies and acceptance criteria
-
-    Design Philosophy:
-      - Dependencies ensure execution order (DAG)
-      - Acceptance criteria make verification testable
-      - Phase enables staged project building
     """
 
     id: int = Field(..., description="Unique task ID")
@@ -104,10 +95,6 @@ class AgentState(TypedDict):
 class ToolResult(TypedDict):
     """
     Unified encapsulation of tool execution results
-
-    Good Taste:
-      - Success/Failure use the same structure, eliminating if/else
-      - output field unifies results, no need to distinguish types
     """
 
     tool_name: str  # Tool name

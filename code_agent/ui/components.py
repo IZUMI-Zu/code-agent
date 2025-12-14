@@ -56,12 +56,6 @@ ICONS = {
 class StreamingPanel:
     """
     Real-time streaming panel with timeline layout
-
-    Design Philosophy:
-      - Uses Table.grid to enforce indentation (timeline style)
-      - Left column: Timeline line │
-      - Right column: Markdown text (auto-wrapping)
-      - Uses Live for flicker-free updates
     """
 
     def __init__(self):
@@ -136,15 +130,6 @@ class StreamingPanel:
 def render_message(message) -> None:
     """
     Render a single message
-
-    Supported Types:
-      - HumanMessage: User Input
-      - AIMessage: AI Response
-      - ToolMessage: Tool Result
-
-    Good Taste:
-      - Clean, minimal design without borders
-      - Clear visual hierarchy through typography
     """
     # Render content
     content = message.content if hasattr(message, "content") else str(message)
@@ -182,11 +167,6 @@ def _render_tool_calls(tool_calls: list) -> None:
 
 
 def render_welcome() -> None:
-    """
-    极简欢迎界面(扁平化, 斜杠命令提示)
-
-    Good Taste: 只显示必要信息, 节省空间
-    """
     console.print()
 
     # Modern Header
@@ -208,7 +188,6 @@ def render_agent_header(worker_name: str) -> None:
     """
     Render agent header with timeline
     """
-    # Agent 标识 (Timeline 风格, 聊天气泡)
     agent_icons = {
         "Planner": "📋",
         "Coder": "💻",
@@ -239,11 +218,6 @@ def render_agent_header(worker_name: str) -> None:
 
 
 def show_thinking(task: str = "Thinking") -> Status:
-    """
-    思考状态指示器(扁平化)
-
-    Good Taste: 降低视觉干扰, 用 dim 色调表示非关键信息
-    """
     status = console.status(
         f"[{COLORS['dimmer']}]{ICONS['thinking']} {task}...[/{COLORS['dimmer']}]",
         spinner="dots",
@@ -253,11 +227,6 @@ def show_thinking(task: str = "Thinking") -> Status:
 
 
 def start_tool_spinner(tool_name: str, args: Any = None) -> Status:
-    """
-    工具执行 Spinner(扁平化)
-
-    Good Taste: 统一的色彩方案, 参数预览简化
-    """
     args_preview = _format_args_preview(args, max_length=50)
     label = f"[{COLORS['accent']}]{ICONS['running']} {tool_name}[/{COLORS['accent']}]"
     if args_preview:
@@ -276,15 +245,6 @@ def render_tool_execution(
     error: str | None = None,
     worker: str | None = None,
 ) -> None:
-    """
-    Timeline 风格工具执行渲染 (扁平化 icon)
-
-    Good Taste:
-      - 移除 Panel 盒子, 使用垂直线 │ 连接
-      - 扁平化 icon, Terminal 原生美学
-      - 动作动词用 bold magenta/cyan
-    """
-    # 状态图标与颜色(扁平化)
     status_config = {
         "running": (ICONS["running"], "bold bright_magenta"),
         "completed": (ICONS["success"], "bold bright_cyan"),
@@ -293,16 +253,10 @@ def render_tool_execution(
         "control_flow": (ICONS["flow"], "bold bright_blue"),
     }
     icon, action_color = status_config.get(status, ("·", "white"))
-
-    # 构建 Timeline 行
-    # 格式: │  ├─ 🔨 tool_name  [args]  [duration]
-
-    # Worker 前缀(如果有)
     worker_prefix = ""
     if worker:
         worker_prefix = f"[dim]{escape(worker)}[/dim] "
 
-    # 动作动词(根据状态)
     action_verb = {
         "running": "Running",
         "completed": "Completed",
@@ -311,19 +265,16 @@ def render_tool_execution(
         "control_flow": "Flow",
     }.get(status, "")
 
-    # 参数预览
     args_text = ""
     if args:
         args_preview = _format_args_preview(args, max_length=60)
         if args_preview:
             args_text = f"[dim]{args_preview}[/dim]"
 
-    # 时长
     duration_text = ""
     if duration is not None and status in ["completed", "failed", "control_flow"]:
         duration_text = f"[dim]({duration:.2f}s)[/dim]"
 
-    # 组装内容
     content = f"[{action_color}]{icon} {action_verb}[/{action_color}] {worker_prefix}[bold]{escape(tool_name)}[/bold]"
     if args_text:
         content += f" {args_text}"
@@ -338,7 +289,6 @@ def render_tool_execution(
     grid.add_row(ICONS["timeline"], content)
     console.print(grid)
 
-    # 错误信息(如果有)
     if status == "failed" and error:
         error_grid = Table.grid(padding=(0, 1))
         error_grid.add_column(style="dim", width=5)  # │ + 4 spaces
@@ -348,17 +298,9 @@ def render_tool_execution(
 
 
 def render_tool_result_preview(result_preview: str, tool_name: str | None = None) -> None:
-    """
-    Timeline 风格结果预览(移除 Panel, 使用缩进)
-
-    Good Taste: 简洁的缩进, 不用盒子包裹
-    """
     if not result_preview or not result_preview.strip():
         return
 
-    # 检测语法类型
-    # Removed unused lexer variable
-    # lexer = "text"
     if tool_name:
         tool_lower = tool_name.lower()
         if "read" in tool_lower or "grep" in tool_lower:
@@ -372,12 +314,10 @@ def render_tool_result_preview(result_preview: str, tool_name: str | None = None
             # lexer = "bash"
             pass
 
-    # 限制预览行数(最多 5 行, 更紧凑)
     lines = result_preview.split("\n")
     preview_lines = lines[:5]
     has_more = len(lines) > 5
 
-    # Timeline 风格输出(扁平化)
     # Header
     grid = Table.grid(padding=(0, 1))
     grid.add_column(style="dim", width=5)
@@ -402,11 +342,6 @@ def render_tool_result_preview(result_preview: str, tool_name: str | None = None
 
 
 def _format_args_preview(args: Any, max_length: int = 60) -> str:
-    """
-    格式化参数预览(简化显示)
-
-    Good Taste: 优先显示最有信息量的字段
-    """
     if not args:
         return ""
 
@@ -416,7 +351,6 @@ def _format_args_preview(args: Any, max_length: int = 60) -> str:
             preview = preview[: max_length - 3] + "..."
         return escape(preview)
 
-    # 优先显示的关键字段
     priority_keys = [
         "command",
         "commands",
@@ -433,8 +367,6 @@ def _format_args_preview(args: Any, max_length: int = 60) -> str:
             if len(value) > max_length:
                 value = value[: max_length - 3] + "..."
             return escape(f"{key}={value}")
-
-    # 回退: 显示第一个字段
     if args:
         first_key = next(iter(args))
         value = str(args[first_key])
@@ -449,12 +381,6 @@ def _format_args_preview(args: Any, max_length: int = 60) -> str:
 
 
 def render_status_bar(model: str = "GPT-4", cost: str = "$0.00", workspace: str = "./") -> None:
-    """
-    渲染底部状态栏(Claude Code 风格)
-
-    Good Taste: 用表格布局自动对齐, 消除手动空格计算
-    """
-    # 创建状态栏表格
     table = Table.grid(expand=True)
     table.add_column(justify="left", style=COLORS["dimmer"])
     table.add_column(justify="right", style=COLORS["dimmer"])
@@ -464,31 +390,16 @@ def render_status_bar(model: str = "GPT-4", cost: str = "$0.00", workspace: str 
 
     table.add_row(left_info, right_info)
 
-    # 渲染分隔线 + 状态栏
     console.print("─" * console.width, style=COLORS["dim"])
     console.print(table)
     console.print()
 
 
 def render_separator() -> None:
-    """
-    渲染分隔线
-
-    Good Taste: 简洁的视觉呼吸空间
-    """
     console.print("─" * console.width, style=COLORS["dim"])
 
 
-# Shell Output Streaming (Claude Code Style)
-
-
 def render_shell_start(command: str, cwd: str | None = None) -> None:
-    """
-    Timeline 风格 Shell 命令启动(扁平化)
-
-    Good Taste: 移除 Panel, 使用垂直线连接
-    """
-    # Timeline 格式: │  $ command(扁平化)
     grid = Table.grid(padding=(0, 1))
     grid.add_column(style="dim", width=3)  # │ + 2 spaces
     grid.add_column()
@@ -508,11 +419,6 @@ def render_shell_start(command: str, cwd: str | None = None) -> None:
 
 
 def render_shell_output(line: str, stream: str = "stdout") -> None:
-    """
-    Timeline 风格 Shell 输出(扁平化)
-
-    Good Taste: 缩进输出, 保持时间线连续
-    """
     grid = Table.grid(padding=(0, 1))
     grid.add_column(style="dim", width=8)  # Indent 8
     grid.add_column()
@@ -526,11 +432,6 @@ def render_shell_output(line: str, stream: str = "stdout") -> None:
 
 
 def render_shell_finished(return_code: int = 0, status: str = "completed") -> None:
-    """
-    Timeline 风格 Shell 完成状态(扁平化)
-
-    Good Taste: 简洁的状态行, 不打断时间线
-    """
     grid = Table.grid(padding=(0, 1))
     grid.add_column(style="dim", width=5)  # Indent 5
     grid.add_column()
@@ -558,30 +459,20 @@ def render_tool_confirmation(
     args: Any,
     description: str | None = None,
 ) -> None:
-    """
-    渲染工具确认对话框(Panel + 语法高亮)
-
-    Good Taste: 统一的确认界面, 自动检测文件类型
-    """
     console.print()
 
-    # 标题
     title = Text()
     title.append("⚠ ", style=COLORS["warning"])
     title.append("Confirmation Required", style=f"bold {COLORS['warning']}")
 
-    # 构建内容
     content_parts = []
 
-    # 工具名称
     content_parts.append(Text(f"Tool: {tool_name}", style=f"bold {COLORS['accent']}"))
 
-    # 描述
     if description:
         content_parts.append(Text(description, style=COLORS["dimmer"]))
-        content_parts.append(Text())  # 空行
+        content_parts.append(Text())
 
-    # 特殊处理 write_file(显示文件内容预览)
     if tool_name == "write_file" and isinstance(args, dict) and "content" in args:
         file_path = args.get("file_path", "unknown")
         content = args.get("content", "")
@@ -589,7 +480,6 @@ def render_tool_confirmation(
         content_parts.append(Text(f"File: {file_path}", style=f"bold {COLORS['success']}"))
         content_parts.append(Text())
 
-        # 检测文件类型
         lexer = "text"
         if "." in file_path:
             ext = file_path.split(".")[-1].lower()
@@ -598,7 +488,6 @@ def render_tool_confirmation(
         content_parts.append(Text("Content Preview:", style="bold"))
         content_parts.append(Syntax(content, lexer, theme="monokai", line_numbers=True, word_wrap=True))
 
-        # 其他参数
         other_args = {k: v for k, v in args.items() if k not in ["file_path", "content"]}
         if other_args:
             content_parts.append(Text())
@@ -610,7 +499,6 @@ def render_tool_confirmation(
                 content_parts.append(Text(str(other_args)))
 
     else:
-        # 默认参数渲染
         if isinstance(args, dict):
             try:
                 args_str = json.dumps(args, indent=2, default=str)
@@ -628,7 +516,6 @@ def render_tool_confirmation(
         else:
             content_parts.append(Text(f"Arguments: {args}"))
 
-    # 渲染 Panel
     panel = Panel(
         Group(*content_parts),
         title=title,
