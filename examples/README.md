@@ -19,17 +19,17 @@ The following system prompt was used to generate both projects:
 
 ## Project Comparison
 
-| Dimension             | Code Agent (Claude)          | Code Agent (Qwen)               | Claude Code         | Gemini CLI          |
-| --------------------- | ---------------------------- | ------------------------------- | ------------------- | ------------------- |
-| **Tool**              | Code Agent                   | Code Agent                      | Claude Code         | gemini-cli          |
-| **Reasoning Model**   | claude-sonnet-4.5            | qwen/qwen3-coder-plus           | claude-sonnet-4.5   | gemini-3-pro        |
-| **Lightweight Model** | gpt-4o-mini                  | gpt-4o-mini                     | N/A                 | gemini-2.5-flash    |
-| **Language**          | JavaScript                   | JavaScript                      | TypeScript          | TypeScript          |
-| **Human Interaction** | 3 chat rounds                | 3 rounds + 3 manual adjustments | 2 chat rounds       | 3 chat rounds       |
-| **Manual Fixes**      | 0                            | 3                               | 0                   | 0                   |
-| **Tool Calls**        | N/A                          | N/A                             | N/A                 | 35 (100% success)   |
-| **Issues Resolved**   | CORS (prompted)              | CORS (prompted)                 | CORS (auto)         | CORS + API params   |
-| **Backend Included**  | No                           | No                              | Yes (Express)       | No                  |
+| Dimension             | Code Agent (Claude) | Code Agent (Qwen)               | Claude Code       | Gemini CLI        | Code Agent (DeepSeek)  |
+| --------------------- | ------------------- | ------------------------------- | ----------------- | ----------------- | ---------------------- |
+| **Tool**              | Code Agent          | Code Agent                      | Claude Code       | gemini-cli        | Code Agent             |
+| **Reasoning Model**   | claude-sonnet-4.5   | qwen/qwen3-coder-plus           | claude-sonnet-4.5 | gemini-3-pro      | deepseek-chat          |
+| **Lightweight Model** | gpt-4o-mini         | gpt-4o-mini                     | N/A               | gemini-2.5-flash  | deepseek-chat          |
+| **Language**          | JavaScript          | JavaScript                      | TypeScript        | TypeScript        | TypeScript             |
+| **Human Interaction** | 3 chat rounds       | 3 rounds + 3 manual adjustments | 2 chat rounds     | 3 chat rounds     | 2 chat rounds          |
+| **Manual Fixes**      | 0                   | 3                               | 0                 | 0                 | 0                      |
+| **Tool Calls**        | N/A                 | N/A                             | N/A               | 35 (100% success) | N/A                    |
+| **Issues Resolved**   | CORS (prompted)     | CORS (prompted)                 | CORS (auto)       | CORS + API params | CORS (Node) + Tailwind |
+| **Backend Included**  | No                  | No                              | Yes (Express)     | No                | Yes (Node)             |
 
 ## Common Features
 
@@ -73,7 +73,22 @@ npm run dev
 
 Visit `http://localhost:5173`
 
-### 3. Claude Code
+### 3. Code Agent (DeepSeek Chat v3)
+
+```bash
+cd deepseek-v3
+npm install
+npm run dev
+# proxy
+cd server/
+npm run start
+```
+
+Visit `http://localhost:5173`
+
+**Note**: Includes Node.js backend proxy (`server/server.js`).
+
+### 4. Claude Code
 
 ```bash
 cd baseline/claude-code
@@ -85,7 +100,7 @@ Visit `http://localhost:5173`
 
 **Note**: Includes Express backend proxy for production (`npm start`)
 
-### 4. Gemini CLI
+### 5. Gemini CLI
 
 ```bash
 cd baseline/gemini
@@ -148,6 +163,29 @@ src/
 - Components grouped by feature domain
 - Separate hooks/ and utils/ directories
 - More granular file splitting
+
+### Code Agent (DeepSeek Chat v3)
+
+**Directory Structure**:
+
+```bash
+src/
+├── components/         # UI components
+├── pages/             # Page components
+├── services/          # API services
+├── test/              # Tests
+└── utils/             # Utilities
+server/                # Backend Proxy
+└── server.js
+```
+
+**Observations**:
+
+- 5 top-level directories in src/
+- Separate backend proxy server (Node.js)
+- TypeScript implementation
+- Includes test directory
+- Agent self-corrected Tailwind CSS version issues
 
 ### Claude Code (Baseline)
 
@@ -233,12 +271,13 @@ Delivery Complete
 
 ### Lines of Code
 
-| Version           | Total LOC | JSX/TSX | CSS  | Language   | React Version |
-| ----------------- | --------- | ------- | ---- | ---------- | ------------- |
-| Code Agent (Claude) | ~1200     | ~800    | ~400 | JavaScript | 19.x          |
-| Code Agent (Qwen)   | ~1500     | ~1000   | ~500 | JavaScript | 19.x          |
-| Claude Code       | ~656      | ~600    | ~56  | TypeScript | 18.x          |
-| Gemini CLI        | ~420      | ~380    | ~40  | TypeScript | 19.2 (latest) |
+| Version               | Total LOC | JSX/TSX | CSS  | Language   | React Version |
+| --------------------- | --------- | ------- | ---- | ---------- | ------------- |
+| Code Agent (Claude)   | ~1200     | ~800    | ~400 | JavaScript | 19.x          |
+| Code Agent (Qwen)     | ~1500     | ~1000   | ~500 | JavaScript | 19.x          |
+| Claude Code           | ~656      | ~600    | ~56  | TypeScript | 18.x          |
+| Gemini CLI            | ~420      | ~380    | ~40  | TypeScript | 19.2 (latest) |
+| Code Agent (DeepSeek) | ~2300     | ~2100   | ~100 | TypeScript | 19.x          |
 
 **Notes**:
 
@@ -300,11 +339,6 @@ import { FixedSizeList } from 'react-window';
 ### Running the Examples
 
 Both projects require Node.js 18+ and standard React development setup. The examples run independently without shared dependencies.
-
-### Model Cost Data
-
-- Claude Sonnet 4.5: ~$6 USD for complete implementation
-- Qwen3 Coder Plus: Lower cost (open-source model), requires more human adjustment
 
 ---
 

@@ -81,12 +81,18 @@ Four implementations of the same project for comparison:
 **Path**: `examples/qwen3-coder-plus/`
 **Language**: JavaScript | **Iterations**: 3 rounds, 3 fixes
 
-### 3. Claude Code
+### 3. Code Agent (DeepSeek Chat v3)
+
+**Path**: `examples/deepseek-v3/`
+**Language**: TypeScript | **Iterations**: 2 rounds, 0 fix
+**Notes**: Implemented using DeepSeek Chat (v3). The first iteration implemented a Node API proxy, and the second iteration addressed a Tailwind CSS error by downgrading it.
+
+### 4. Claude Code
 
 **Path**: `examples/baseline/claude-code/`
 **Language**: TypeScript | **Iterations**: 2 rounds, 0 fixes
 
-### 4. Gemini CLI
+### 5. Gemini CLI
 
 **Path**: `examples/baseline/gemini/`
 **Language**: TypeScript | **Iterations**: 3 rounds, 0 fixes
