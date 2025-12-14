@@ -1,0 +1,12 @@
+{
+  "name": "comp7103-examples-root",
+  "version": "1.0.0",
+  "description": "Root deployment for COMP7103 examples",
+  "scripts": {
+    "build": "node scripts/build-all.js"
+  },
+  "devDependencies": {
+    "fs-extra": "^11.2.0",
+    "shelljs": "^0.8.5"
+  }
+}

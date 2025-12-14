@@ -1,0 +1,34 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/arxiv",
+      "destination": "https://export.arxiv.org/api/query"
+    },
+    {
+      "source": "/api/query",
+      "destination": "https://export.arxiv.org/api/query"
+    },
+    {
+      "source": "/baseline/claude-code/((?!assets/|.*\\.).*)",
+      "destination": "/baseline/claude-code/index.html"
+    },
+    {
+      "source": "/baseline/gemini/((?!assets/|.*\\.).*)",
+      "destination": "/baseline/gemini/index.html"
+    },
+    {
+      "source": "/code-agent/claude-sonnet-4.5/((?!assets/|.*\\.).*)",
+      "destination": "/code-agent/claude-sonnet-4.5/index.html"
+    },
+    {
+      "source": "/code-agent/deepseek-v3/((?!assets/|.*\\.).*)",
+      "destination": "/code-agent/deepseek-v3/index.html"
+    },
+    {
+      "source": "/code-agent/qwen3-coder-plus/((?!assets/|.*\\.).*)",
+      "destination": "/code-agent/qwen3-coder-plus/index.html"
+    }
+  ]
+}
