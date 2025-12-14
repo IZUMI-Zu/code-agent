@@ -16,7 +16,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    workspace_path = Path(args.workspace).resolve()
+    workspace_path = Path(args.workspace).expanduser().resolve()
     from code_agent.config import settings
 
     settings.override_workspace(workspace_path)
