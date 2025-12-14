@@ -1,15 +1,26 @@
 # Code Agent
 
-A multi-agent code assistant powered by LangGraph, implementing intelligent task orchestration through Supervisor-Worker architecture.
+A multi-agent code assistant powered by LangGraph that orchestrates Planner, Coder, and Reviewer agents to autonomously handle software development tasks.
+
+## What & Why
+
+**What is Code Agent?**
+Code Agent is an AI-powered coding assistant that breaks down complex programming tasks into structured workflows. Instead of a single LLM handling everything, it uses specialized agents (Planner, Coder, Reviewer) coordinated by a Supervisor for better task execution.
+
+**Why use it?**
+- **Task Decomposition**: Planner analyzes requirements and creates execution plans
+- **Safe Execution**: Human-in-the-loop confirms file operations and shell commands
+- **Quality Control**: Reviewer validates code before completion
+- **Model Flexibility**: Supports OpenAI, DeepSeek, Qwen, and any OpenAI-compatible APIs
 
 ## Core Features
 
-- **Multi-Agent Collaboration**: Complete workflow from Planner → Coder → Reviewer
-- **Intelligent Task Orchestration**: Supervisor dynamically routes to next agent based on context
-- **Human-in-the-Loop**: Tool execution confirmation mechanism for operational safety
+- **Multi-Agent Collaboration**: Supervisor → Planner → Coder → Reviewer workflow
+- **Intelligent Routing**: Context-aware agent orchestration
+- **Human-in-the-Loop**: Tool execution requires user confirmation
 - **Workspace Isolation**: Pattern-based file access control
-- **Streaming Interaction**: Real-time display of tool execution and agent reasoning
-- **Cross-Platform File Operations**: Unified filesystem abstraction eliminating platform differences
+- **Streaming Output**: Real-time agent reasoning and tool execution display
+- **Cross-Platform**: Unified filesystem abstraction (Windows/macOS/Linux)
 
 ## Quick Start
 
@@ -68,51 +79,40 @@ uv run ca -w ~/my-project
 
 ## Examples
 
-Four implementations of the same project for comparison:
+Complete arXiv CS Daily applications built with different tools for comparison. All implement the same requirements: category navigation, daily paper lists, and citation generation.
 
-### 1. Code Agent (Claude Sonnet 4.5)
+### Code Agent (Multi-Model Comparison)
 
-**Path**: `examples/claude-sonnet-4.5/`
-**Language**: JavaScript | **Iterations**: 3 rounds, 0 fixes
+Code Agent examples using different LLM providers:
 
-### 2. Code Agent (Qwen3 Coder Plus)
+| Model                  | Path                                | Language   | Rounds | Fixes | Notes                          |
+| ---------------------- | ----------------------------------- | ---------- | ------ | ----- | ------------------------------ |
+| **Claude Sonnet 4.5**  | `examples/code-agent/claude-sonnet-4.5/` | JavaScript | 3      | 0     | Clean implementation           |
+| **DeepSeek Chat v3**   | `examples/code-agent/deepseek-v3/`       | TypeScript | 2      | 0     | Node proxy + Tailwind fix      |
+| **Qwen3 Coder Plus**   | `examples/code-agent/qwen3-coder-plus/`  | JavaScript | 3      | 3     | Manual adjustments needed      |
 
-**Path**: `examples/qwen3-coder-plus/`
-**Language**: JavaScript | **Iterations**: 3 rounds, 3 fixes
+### Baseline Tools (Industry Comparison)
 
-### 3. Code Agent (DeepSeek Chat v3)
+Established coding assistants for benchmarking:
 
-**Path**: `examples/deepseek-v3/`
-**Language**: TypeScript | **Iterations**: 2 rounds, 0 fix
-**Notes**: Implemented using DeepSeek Chat (v3). The first iteration implemented a Node API proxy, and the second iteration addressed a Tailwind CSS error by downgrading it.
+| Tool              | Path                          | Language   | Rounds | Code Size | CORS Handling  |
+| ----------------- | ----------------------------- | ---------- | ------ | --------- | -------------- |
+| **Claude Code**   | `examples/baseline/claude-code/` | TypeScript | 2      | 656 LOC   | Auto + Backend |
+| **Gemini CLI**    | `examples/baseline/gemini/`      | TypeScript | 3      | 420 LOC   | Auto-detected  |
 
-### 4. Claude Code
-
-**Path**: `examples/baseline/claude-code/`
-**Language**: TypeScript | **Iterations**: 2 rounds, 0 fixes
-
-### 5. Gemini CLI
-
-**Path**: `examples/baseline/gemini/`
-**Language**: TypeScript | **Iterations**: 3 rounds, 0 fixes
-
-### Key Metrics
-
-| Metric         | Code Agent    | Claude Code    | Gemini CLI    |
-| -------------- | ------------- | -------------- | ------------- |
-| **Code Size**  | 1200-1500 LOC | 656 LOC        | 420 LOC       |
-| **CORS**       | Prompted      | Auto + Backend | Auto-detected |
-| **API Issues** | N/A           | N/A            | Auto-fixed    |
-| **React**      | 19.x          | 18.x           | 19.2          |
-
-**Run an example**:
+### Quick Run
 
 ```bash
+# Code Agent example (Claude Sonnet 4.5)
+cd examples/code-agent/claude-sonnet-4.5
+npm install && npm run dev
+
+# Baseline example (Gemini CLI)
 cd examples/baseline/gemini
 npm install && npm run dev
 ```
 
-See [`examples/README.md`](examples/README.md) for detailed comparison.
+**Detailed analysis**: See [`examples/README.md`](examples/README.md) for architecture comparison and metrics.
 
 ## Architecture
 
