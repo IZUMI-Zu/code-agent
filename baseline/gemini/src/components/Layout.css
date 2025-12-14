@@ -1,0 +1,24 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  margin-left: 280px;
+  flex: 1;
+  padding: 40px;
+  max-width: 1000px; /* Constrain width for readability */
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .navbar {
+    display: none; /* For MVP, hide sidebar on mobile or implement hamburger */
+  }
+  .main-content {
+    margin-left: 0;
+    padding: 20px;
+  }
+  
+  /* Simple mobile fallback message or rudimentary mobile nav could go here */
+}

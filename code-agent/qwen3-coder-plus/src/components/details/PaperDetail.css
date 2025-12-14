@@ -1,0 +1,110 @@
+.paper-detail {
+  padding: 20px 0;
+}
+
+.paper-detail h1 {
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.4;
+}
+
+.paper-detail-meta {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.paper-detail-meta p {
+  margin-bottom: 0.5rem;
+}
+
+.paper-detail-meta strong {
+  display: inline-block;
+  width: 100px;
+}
+
+.paper-detail-abstract h2 {
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+}
+
+.paper-detail-abstract p {
+  line-height: 1.6;
+  color: #444;
+}
+
+.citation-generator {
+  margin-top: 2rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.citation-generator h3 {
+  background-color: #f8f9fa;
+  padding: 1rem;
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.citation-tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  background-color: #f8f9fa;
+}
+
+.citation-tabs button {
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  color: #666;
+  border-right: 1px solid #ddd;
+}
+
+.citation-tabs button:last-child {
+  border-right: none;
+}
+
+.citation-tabs button.active {
+  color: #007bff;
+  background-color: white;
+  border-bottom: 2px solid #007bff;
+  margin-bottom: -1px;
+}
+
+.citation-content {
+  position: relative;
+  padding: 1rem;
+}
+
+.citation-content pre {
+  background-color: #f8f9fa;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.copy-button {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.copy-button:hover {
+  background-color: #0056b3;
+}

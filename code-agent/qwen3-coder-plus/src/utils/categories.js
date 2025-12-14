@@ -1,0 +1,47 @@
+export const categories = [
+  { id: 'cs.AI', name: 'Artificial Intelligence' },
+  { id: 'cs.AR', name: 'Hardware Architecture' },
+  { id: 'cs.CC', name: 'Computational Complexity' },
+  { id: 'cs.CE', name: 'Computational Engineering' },
+  { id: 'cs.CG', name: 'Computational Geometry' },
+  { id: 'cs.CL', name: 'Computation and Language' },
+  { id: 'cs.CR', name: 'Cryptography and Security' },
+  { id: 'cs.CV', name: 'Computer Vision' },
+  { id: 'cs.CY', name: 'Computers and Society' },
+  { id: 'cs.DB', name: 'Databases' },
+  { id: 'cs.DC', name: 'Distributed Computing' },
+  { id: 'cs.DL', name: 'Digital Libraries' },
+  { id: 'cs.DM', name: 'Discrete Mathematics' },
+  { id: 'cs.DS', name: 'Data Structures and Algorithms' },
+  { id: 'cs.ET', name: 'Emerging Technologies' },
+  { id: 'cs.FL', name: 'Formal Languages' },
+  { id: 'cs.GL', name: 'General Literature' },
+  { id: 'cs.GR', name: 'Graphics' },
+  { id: 'cs.GT', name: 'Game Theory' },
+  { id: 'cs.HC', name: 'Human-Computer Interaction' },
+  { id: 'cs.IR', name: 'Information Retrieval' },
+  { id: 'cs.IT', name: 'Information Theory' },
+  { id: 'cs.LG', name: 'Machine Learning' },
+  { id: 'cs.LO', name: 'Logic in Computer Science' },
+  { id: 'cs.MA', name: 'Multiagent Systems' },
+  { id: 'cs.MM', name: 'Multimedia' },
+  { id: 'cs.MS', name: 'Mathematical Software' },
+  { id: 'cs.NA', name: 'Numerical Analysis' },
+  { id: 'cs.NE', name: 'Neural and Evolutionary Computing' },
+  { id: 'cs.NI', name: 'Networking and Internet' },
+  { id: 'cs.OH', name: 'Other Computer Science' },
+  { id: 'cs.OS', name: 'Operating Systems' },
+  { id: 'cs.PF', name: 'Performance' },
+  { id: 'cs.PL', name: 'Programming Languages' },
+  { id: 'cs.RO', name: 'Robotics' },
+  { id: 'cs.SC', name: 'Symbolic Computation' },
+  { id: 'cs.SD', name: 'Sound' },
+  { id: 'cs.SE', name: 'Software Engineering' },
+  { id: 'cs.SI', name: 'Social and Information Networks' },
+  { id: 'cs.SY', name: 'Systems and Control' }
+];
+
+export const getCategoryName = (categoryId) => {
+  const category = categories.find(cat => cat.id === categoryId);
+  return category ? category.name : categoryId;
+};

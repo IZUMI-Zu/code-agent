@@ -1,0 +1,40 @@
+.paper-item {
+  padding: 1rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.paper-item:last-child {
+  border-bottom: none;
+}
+
+.paper-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.paper-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.paper-title a:hover {
+  color: #007bff;
+  text-decoration: underline;
+}
+
+.paper-authors {
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.paper-abstract {
+  color: #555;
+  margin-bottom: 0.5rem;
+}
+
+.paper-date {
+  color: #999;
+  font-size: 0.9rem;
+}
