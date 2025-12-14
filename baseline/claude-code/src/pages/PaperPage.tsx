@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { PaperDetail } from '../components/PaperDetail';
+import { BackButton } from '../components/BackButton';
 import { fetchPaperById } from '../services/arxiv';
 import type { Paper } from '../types';
 
@@ -48,6 +49,8 @@ export function PaperPage() {
 
   return (
     <div className="paper-page">
+      <BackButton />
+
       <nav className="breadcrumb">
         <Link to="/">首页</Link>
         <span> / </span>

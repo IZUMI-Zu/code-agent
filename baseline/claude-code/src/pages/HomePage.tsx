@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { CategoryNav } from '../components/CategoryNav';
 import { PaperList } from '../components/PaperList';
+import { BackButton } from '../components/BackButton';
 import { fetchPapers } from '../services/arxiv';
 import type { CategoryKey, Paper } from '../types';
 
@@ -44,6 +45,8 @@ export function HomePage() {
       </aside>
 
       <main className="main-content">
+        <BackButton />
+
         <header className="page-header">
           <h1>arXiv CS Daily</h1>
           <p className="subtitle">

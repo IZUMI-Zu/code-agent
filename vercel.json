@@ -1,6 +1,14 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "git": {
+    "deploymentEnabled": {
+      "example": true
+    }
+  },
+  "github": {
+    "silent": true
+  },
   "rewrites": [
     {
       "source": "/api/arxiv",

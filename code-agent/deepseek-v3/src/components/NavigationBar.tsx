@@ -51,6 +51,14 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
     <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
+          {/* Floating back button */}
+          <a
+            href="/"
+            className="fixed top-5 right-5 z-50 px-5 py-3 bg-white/95 dark:bg-gray-800/95 text-blue-600 dark:text-blue-400 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 hover:-translate-y-0.5 hover:shadow-xl transition-all duration-200 font-medium text-sm"
+          >
+            ← Back to Home
+          </a>
+
           {/* Logo and brand */}
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
