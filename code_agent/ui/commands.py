@@ -97,8 +97,6 @@ def _cmd_tools() -> str:
             categories["Shell"].append((name, desc))
         elif "plan" in name:
             categories["Planning"].append((name, desc))
-        elif "sub_agent" in name:
-            categories["Sub-Agent"].append((name, desc))
         elif hasattr(tool, "__class__") and "MCP" in tool.__class__.__name__:
             categories["MCP"].append((name, desc))
         else:
