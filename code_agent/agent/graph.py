@@ -38,6 +38,46 @@ from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
 
 
+def trim_messages(messages: list, max_tokens: int = 8000, keep_last: int = 20):
+    """
+    Intelligent message trimming that preserves System Context.
+
+    Strategy:
+    1. ALWAYS keep all SystemMessages (they contain core instructions & rules).
+    2. Keep the last `keep_last` messages (to maintain immediate conversation flow).
+    3. Trim the middle if necessary.
+
+    Note: This is a simplified token estimation (approx 4 chars/token).
+    """
+    from langchain_core.messages import SystemMessage
+
+    # 1. Separate System Messages (Must Keep)
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    other_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
+
+    # 2. Check if we even need to trim
+    # Simple estimation: 1 msg ≈ 100 tokens? Let's use char count / 4
+    total_chars = sum(len(str(m.content)) for m in messages)
+    est_tokens = total_chars / 4
+
+    if est_tokens < max_tokens:
+        return messages
+
+    # 3. Trim "Other" messages (keep last N)
+    if len(other_msgs) > keep_last:
+        trimmed_others = other_msgs[-keep_last:]
+        logger.info(f"Trimming context: Dropped {len(other_msgs) - keep_last} old messages to save space.")
+    else:
+        trimmed_others = other_msgs
+
+    # 4. Reconstruct: System Messages + Trimmed Others
+    # Note: This might reorder messages if SystemMessages were interleaved,
+    # but for our Agent architecture, System Messages are usually
+    # either at the start (Prompt) or injected immediately before execution (Context).
+    # So placing them at the top is generally correct and safer for instruction following.
+    return system_msgs + trimmed_others
+
+
 def get_model(task_type: Literal["lightweight", "reasoning"] = "reasoning"):
     """
     Get model instance based on task complexity
@@ -75,7 +115,7 @@ registry = get_registry()
 # You can customize this in your .env or config file
 MCP_SERVER_CONFIG = {
     "fetch": {
-        "transport": "stdio",  # 本地进程通信(uvx 服务器)
+        "transport": "stdio",
         "command": "uvx",
         "args": ["mcp-server-fetch"],
     }
@@ -122,22 +162,17 @@ lc_tools = [wrap_tool_with_confirmation(t.to_langchain_tool()) for t in all_tool
 #   3. Generating implementation plan
 # Therefore, it needs scaffolding tools (create_directory, write_file) for config files
 PLANNER_ALLOWED_TOOLS = {
-    # Read tools
+    # Read tools (for context)
     "read_file",
     "list_files",
     "path_exists",
-    "grep_search",  # Code search
-    # Scaffolding tools (NEW: enables project structure creation)
-    "create_directory",  # For directory structure
-    "write_file",  # For config files (package.json, requirements.txt, etc.)
+    "grep_search",
     # Planning tools
     "submit_plan",
     "web_search",
-    # Sub-Agent (Context Isolation - CRITICAL for large codebases)
-    "spawn_sub_agent",  # Isolate dirty context during exploration
     # MCP tools (if loaded)
-    "fetch",  # From mcp-server-fetch
-    "fetch_html",  # From mcp-server-fetch
+    "fetch",
+    "fetch_html",
 }
 lc_tools_for_planner = [t for t in lc_tools if t.name in PLANNER_ALLOWED_TOOLS]
 
@@ -152,6 +187,7 @@ REVIEWER_ALLOWED_TOOLS = {
     "grep_search",  # Code search
     "shell",
     "web_search",
+    "process_manager",
 }
 lc_tools_for_reviewer = [t for t in lc_tools if t.name in REVIEWER_ALLOWED_TOOLS]
 
@@ -172,10 +208,11 @@ summarization = SummarizationMiddleware(
 # REMOVED: ToolCallLimitMiddleware (was misused for workflow control)
 # Workflow control is now handled by state + supervisor routing
 # Per LangGraph docs: middleware is for cross-cutting concerns, NOT workflow logic
-# ADDED: SummarizationMiddleware (proper use case - cross-cutting concern)
-planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=[summarization])
-coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_for_coder, middleware=[summarization])
-reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer, middleware=[summarization])
+# DISABLED: SummarizationMiddleware (causes System Prompt loss)
+# We rely on large context window (128k) of modern models instead.
+planner_agent = create_worker("Planner", PLANNER_PROMPT, lc_tools_for_planner, middleware=[])
+coder_agent = create_worker("Coder", CODER_PROMPT, lc_tools_for_coder, middleware=[])
+reviewer_agent = create_worker("Reviewer", REVIEWER_PROMPT, lc_tools_for_reviewer, middleware=[])
 
 logger.info(f"Planner tools: {[t.name for t in lc_tools_for_planner]}")
 logger.info(f"Coder tools: {[t.name for t in lc_tools_for_coder]}")
@@ -232,10 +269,11 @@ def supervisor_node(state: AgentState):
     # rather than forcing termination. max_iterations is a WARNING, not a HARD LIMIT.
     # User can always Ctrl+C if truly stuck.
     if iteration_count >= max_iterations:
-        logger.warning(
-            f"Supervisor: High iteration count ({iteration_count}/{max_iterations}). "
-            f"Continuing but may be stuck in a loop. User can interrupt with Ctrl+C."
+        logger.error(
+            f"Supervisor: Max iterations reached ({iteration_count}/{max_iterations}). "
+            f"Terminating to prevent infinite loop."
         )
+        return {"next": "FINISH", "phase": "done"}
 
     # New user message → Route to Planner (but preserve context!)
     if is_last_message_from_user():
@@ -297,12 +335,28 @@ def supervisor_node(state: AgentState):
             logger.info("Supervisor: Review PASSED, finishing")
             return {"next": "FINISH", "phase": "done"}
         # review_status is "pending" - this shouldn't happen!
-        # Log warning and route back to Reviewer for re-review
-        logger.warning(
+        # This means Reviewer's output was not parseable
+        # CRITICAL FIX: Don't silently finish - expose the problem and retry
+        logger.error(
             "Supervisor: Review status is 'pending' after Reviewer execution. "
-            "This indicates a parsing failure. Finishing anyway to avoid infinite loop."
+            "This indicates a parsing failure. Routing back to Reviewer to retry."
         )
-        return {"next": "FINISH", "phase": "done"}
+
+        # Safety: Only retry once to avoid infinite loop
+        if iteration_count > 0:
+            logger.error(
+                "Supervisor: Reviewer parsing failed twice. "
+                "This is a critical bug - Reviewer is not following output format. "
+                "Forcing FINISH to prevent infinite loop."
+            )
+            return {"next": "FINISH", "phase": "done"}
+
+        # First failure: retry Reviewer with explicit instructions
+        return {
+            "next": "Reviewer",
+            "phase": "reviewing",
+            "iteration_count": iteration_count + 1,
+        }
 
     if phase == "done":
         return {"next": "FINISH"}
@@ -386,13 +440,23 @@ DO NOT rebuild from scratch! Check what exists and plan targeted fixes.
                 state = {**state, "messages": [context_msg, *list(state["messages"])]}
                 logger.info(f"[{name}] Injected context (user message #{user_msg_count})")
 
-            # For Coder: inject Plan into messages with CRITICAL instructions
+            # For Coder: inject Plan and PREVIOUS FAILURES into messages
             plan = state.get("plan")
             if name == "Coder" and plan:
+                # 1. Inject Previous Failures (Memory)
+                issues = state.get("issues_found", [])
+                failure_context = ""
+                if issues:
+                    failure_context = "\n\n🚨 PREVIOUS ATTEMPT FAILED 🚨\nThe Reviewer found these issues with the last implementation:\n"
+                    for i, issue in enumerate(issues, 1):
+                        failure_context += f"{i}. {issue}\n"
+                    failure_context += "\nYOU MUST FIX THESE ISSUES. Do not repeat the same mistakes.\n"
+                    logger.info(f"[{name}] Injected {len(issues)} previous failures into context")
+
                 plan_text = f"""## Plan to Implement
 
 Summary: {plan.summary}
-
+{failure_context}
 Tasks:
 """
                 for task in plan.tasks:
@@ -400,11 +464,21 @@ Tasks:
 
                 plan_text += """
 CRITICAL WORKFLOW (MANDATORY):
-1. BEFORE implementing ANY task, use list_files() to check what exists
-2. Use read_file() to check if work is already done
-3. If a file already exists and looks correct, SKIP that task
-4. Only write/modify files that are missing or incorrect
-5. After completing all NEW work, STOP immediately
+1. RESEARCH FIRST (For Setups/Configs):
+   - Check package.json for core versions (Vite, Next.js)
+   - Search for "setup <lib> for <framework> <version>"
+   - NEVER guess commands (like `init -p`)
+
+2. CHECK WORKSPACE:
+   - list_files() to see what exists
+   - read_file() to check content
+   - If correct, SKIP task
+
+3. IMPLEMENT:
+   - Only write/modify files that are missing or incorrect
+   - Use str_replace for existing files
+
+4. STOP immediately after completing NEW work
 
 WHY THIS MATTERS:
 - Avoid overwriting existing work
@@ -421,8 +495,15 @@ Step 4: Move to next task
 
 Implement these tasks using the available tools. Do NOT create a new plan.
 """
+                # Use SystemMessage for instruction injection to ensure high priority
+                # (System messages should be at the start)
                 plan_msg = SystemMessage(content=plan_text)
-                state = {**state, "messages": [*list(state["messages"]), plan_msg]}
+
+                # Apply Smart Trimming (Preserve System Prompts + Last 20 messages)
+                current_messages = list(state["messages"])
+                trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=30)
+
+                state = {**state, "messages": [plan_msg, *trimmed_messages]}
                 logger.info(f"[{name}] Injected plan with anti-duplication instructions")
 
             # For Reviewer: inject context about what to review
@@ -443,8 +524,14 @@ Your job is to VERIFY the implementation:
 3. Use shell to test if the application runs
 4. Report any issues found
 """
+                # Use SystemMessage for instruction injection
                 review_msg = SystemMessage(content=review_context)
-                state = {**state, "messages": [*list(state["messages"]), review_msg]}
+
+                # Apply Smart Trimming
+                current_messages = list(state["messages"])
+                trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=30)
+
+                state = {**state, "messages": [review_msg, *trimmed_messages]}
                 logger.info(f"[{name}] Injected review context")
 
             # Invoke worker agent with PlanSubmittedException handling
@@ -462,6 +549,16 @@ Your job is to VERIFY the implementation:
                     # CRITICAL: Pass config to enable LangChain's auto-streaming
                     # The outer graph (with subgraphs=True) will capture streamed tokens
                     # via callback propagation. This is the official LangChain pattern.
+
+                    # Ensure we use the trimmed messages in the state passed to the agent
+                    # Note: We modified 'state' above for Coder/Reviewer, but for Planner (or fallback)
+                    # we should also apply trimming if not done.
+                    if name == "Planner":
+                        current_messages = list(state["messages"])
+                        # Planner needs more history to understand user intent, keep more
+                        trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=50)
+                        state = {**state, "messages": trimmed_messages}
+
                     result = agent_graph.invoke(state, config=config)
 
                 # Extract messages from result
@@ -516,6 +613,43 @@ Your job is to VERIFY the implementation:
 
             # Extract review_status if this is Reviewer
             if name == "Reviewer":
+                # Extract tool calls from messages
+                tool_calls_made = []
+                for msg in new_messages:
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        tool_calls_made.extend([tc["name"] for tc in msg.tool_calls])
+
+                # Check if Reviewer actually ran verification tools
+                # Required tools: shell (for build/test) OR read_file (for code inspection)
+                verification_tools = {"shell", "read_file", "list_files"}
+                tools_used = set(tool_calls_made) & verification_tools
+
+                if not tools_used:
+                    # Reviewer didn't execute ANY verification tools!
+                    logger.warning(
+                        f"[{name}] CRITICAL: Reviewer did not execute any verification tools. "
+                        f"Tool calls made: {tool_calls_made}. "
+                        f"This is 'visual inspection' without actual validation."
+                    )
+
+                    # Return a special status to force retry
+                    from langchain_core.messages import AIMessage
+
+                    warning_msg = AIMessage(
+                        content="⚠️ Reviewer Warning: You must execute verification tools (shell/read_file) "
+                        "to validate the implementation. Visual inspection is not sufficient. "
+                        "Please run build commands and check actual files."
+                    )
+                    return {
+                        "messages": [*new_messages, warning_msg],
+                        "review_status": "pending",  # Will trigger retry in supervisor
+                        "issues_found": [
+                            "Reviewer skipped verification tools. Must run shell commands or read files to validate."
+                        ],
+                    }
+
+                logger.info(f"[{name}] Verification tools used: {list(tools_used)}")
+
                 # Parse Reviewer's structured output
                 # Architecture: Use structured output instead of fragile string matching
                 review_status = "pending"
