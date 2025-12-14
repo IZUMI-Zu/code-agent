@@ -32,7 +32,7 @@ from .human_in_the_loop import wrap_tool_with_confirmation
 from .state import AgentState, Plan
 
 
-def trim_messages(messages: list, max_tokens: int = 8000, keep_last: int = 20):
+def trim_messages(messages: list, max_tokens: int = 100000, keep_last: int = 30):
     """
     Intelligent message trimming that preserves System Context.
 
@@ -439,9 +439,13 @@ Implement these tasks using the available tools. Do NOT create a new plan.
                 # (System messages should be at the start)
                 plan_msg = SystemMessage(content=plan_text)
 
-                # Apply Smart Trimming (Preserve System Prompts + Last 20 messages)
+                # Apply Trimming (Preserve System Prompts + Last N messages)
                 current_messages = list(state["messages"])
-                trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=30)
+                trimmed_messages = trim_messages(
+                    current_messages,
+                    max_tokens=settings.summarization_trigger_tokens,
+                    keep_last=settings.summarization_keep_messages,
+                )
 
                 state = {**state, "messages": [plan_msg, *trimmed_messages]}
                 logger.info(f"[{name}] Injected plan with anti-duplication instructions")
@@ -467,9 +471,13 @@ Your job is to VERIFY the implementation:
                 # Use SystemMessage for instruction injection
                 review_msg = SystemMessage(content=review_context)
 
-                # Apply Smart Trimming
+                # Apply Trimming
                 current_messages = list(state["messages"])
-                trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=30)
+                trimmed_messages = trim_messages(
+                    current_messages,
+                    max_tokens=settings.summarization_trigger_tokens,
+                    keep_last=settings.summarization_keep_messages,
+                )
 
                 state = {**state, "messages": [review_msg, *trimmed_messages]}
                 logger.info(f"[{name}] Injected review context")
@@ -496,7 +504,11 @@ Your job is to VERIFY the implementation:
                     if name == "Planner":
                         current_messages = list(state["messages"])
                         # Planner needs more history to understand user intent, keep more
-                        trimmed_messages = trim_messages(current_messages, max_tokens=100000, keep_last=50)
+                        trimmed_messages = trim_messages(
+                            current_messages,
+                            max_tokens=settings.summarization_trigger_tokens,
+                            keep_last=50,
+                        )
                         state = {**state, "messages": trimmed_messages}
 
                     result = agent_graph.invoke(state, config=config)

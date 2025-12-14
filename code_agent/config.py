@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Make optional for static analysis, but enforced by validator at runtime
     openai_api_key: SecretStr | None = None
-    openai_base_url: str | None = None
+    openai_base_url: str | None = "https://api.openai.com/v1"
     brave_api_key: SecretStr | None = None
 
     # Use lightweight models for simple checks, heavyweight for reasoning
@@ -17,8 +17,8 @@ class Settings(BaseSettings):
 
     # Conversation Memory Management
     # Prevents context window overflow by auto-summarizing old messages
-    summarization_trigger_tokens: int = 4000  # Trigger when exceeding N tokens
-    summarization_keep_messages: int = 20  # Keep last N messages intact
+    summarization_trigger_tokens: int = 100000  # Trigger when exceeding N tokens
+    summarization_keep_messages: int = 30  # Keep last N messages intact
 
     # Workspace Configuration
     workspace_root: Path = Path()
