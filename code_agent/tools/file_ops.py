@@ -134,7 +134,12 @@ class ListFilesTool(BaseTool):
             description="List all files and subdirectories in the specified directory.",
         )
 
-    def _run(self, directory: str = ".", recursive: bool = False, limit: int = 100) -> str:
+    def _run(
+        self,
+        directory: str = ".",
+        recursive: bool = False,
+        limit: int = 100,
+    ) -> str:
         try:
             path = resolve_workspace_path(directory)
         except ValueError as e:
@@ -148,15 +153,9 @@ class ListFilesTool(BaseTool):
 
         items = []
 
-        # Define ignore patterns
-        ignore_dirs = {
-            ".git",
-            "__pycache__",
-            "node_modules",
-            ".venv",
-            "venv",
-            ".idea",
-            ".vscode",
+        # By default, filter out common noise directories/files
+        ignore_names = {
+            ".code_agent",  # Internal agent config
         }
 
         def scan(p: Path, depth: int = 0):
@@ -171,9 +170,10 @@ class ListFilesTool(BaseTool):
                     if len(items) >= limit:
                         break
 
+                    if entry.name in ignore_names:
+                        continue
+
                     if entry.is_dir():
-                        if entry.name in ignore_dirs:
-                            continue
                         items.append(f"{'  ' * depth}📁 {entry.name}/")
                         if recursive:
                             scan(entry, depth + 1)
