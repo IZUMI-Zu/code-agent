@@ -120,9 +120,6 @@
                 #header
                 #h(1fr)
                 #title
-            ] else [
-                #set text(font: headings-font, weight: "medium")
-                #header
             ]
         },
         numbering: (..nums) => {
@@ -133,17 +130,19 @@
 
     // Set title block
     {
-        v(26pt)
-        align(center, text(font: headings-font, weight: "medium", size: 22pt, title))
-        v(16pt)
+        v(2em)
+        align(center, text(font: headings-font, weight: "medium", size: 14pt, header))
+        v(0.6em)
+        align(center, text(font: headings-font, weight: "bold", size: 18pt, hyphenate: false, title))
+        v(1em)
         if type(author) == array {
             pad(
                 top: 0.5em,
                 bottom: 0.5em,
-                x: 2em,
+                x: 5em,
                 grid(
-                    columns: (1fr,) * calc.min(3, author.len()),
-                    gutter: 1em,
+                    columns: (1fr,) * calc.min(2, author.len()),
+                    gutter: 0em,
                     ..author.map(a => align(center, text(font: body-font, style: "italic", a)))
                 )
             )
