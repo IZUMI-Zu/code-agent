@@ -50,6 +50,9 @@ class PatternManager:
             # Ensure workspace exists
             settings.workspace_root.mkdir(parents=True, exist_ok=True)
 
+            # Ensure parent directory of pattern file exists (e.g., .code_agent/)
+            self.pattern_file.parent.mkdir(parents=True, exist_ok=True)
+
             data = {"permissions": self.patterns}
             with pathlib.Path(self.pattern_file).open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)

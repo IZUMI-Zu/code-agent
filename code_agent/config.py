@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # Model Stratification (Claude Code Architecture)
     # Use lightweight models for simple checks, heavyweight for reasoning
     # Performance: lightweight is 3-5x faster, 70% cheaper
-    lightweight_model: str = "gpt-4o-mini"  # For: topic detection, format validation
-    reasoning_model: str = "gpt-4o"  # For: planning, coding, reviewing
+    lightweight_model: str = "gpt-4o-mini"
+    reasoning_model: str = "gpt-4o"
 
     # Conversation Memory Management
     # Prevents context window overflow by auto-summarizing old messages
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # Workspace Configuration
     workspace_root: Path = Path()
-    allowed_patterns_file: str = ".allowed_patterns"
+    allowed_patterns_file: str = ".code_agent/allowed_patterns.json"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
