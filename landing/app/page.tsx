@@ -49,35 +49,62 @@ const PROJECTS: Project[] = [
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function ProjectCard({ project }: { project: Project }) {
-  const tagClass =
-    project.type === "baseline"
-      ? "bg-gray-100 text-gray-700"
-      : "bg-blue-50 text-blue-800";
-
-  const tagLabel = project.type === "baseline" ? "Baseline" : "Code Agent";
+  const isAgent = project.type === "agent";
 
   return (
     <a
       href={project.path}
-      className="block h-full p-6 bg-white border border-gray-200 rounded-xl transition-all hover:-translate-y-1 hover:shadow-xl hover:border-gray-300"
+      className="group block h-full p-6 md:p-8 bg-white rounded-2xl border border-gray-200 transition-all duration-200 hover:border-gray-400 hover:shadow-md"
     >
-      <div className="flex items-center mb-4 text-sm">
-        <span
-          className={`px-3 py-1 rounded-full font-semibold uppercase tracking-wider text-xs ${tagClass}`}
-        >
-          {tagLabel}
-        </span>
-        <span className="ml-auto text-gray-500 font-mono text-xs">
-          {project.path}
-        </span>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h2 className="text-lg md:text-xl font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+          {project.name}
+        </h2>
+        {isAgent && (
+          <span className="px-3.5 py-2 text-sm font-semibold text-blue-600 bg-blue-50 rounded-lg whitespace-nowrap">
+            AGENT
+          </span>
+        )}
       </div>
-      <h2 className="mb-2 text-xl font-semibold text-blue-600">
-        {project.name}
-      </h2>
-      <p className="text-gray-600 text-sm leading-relaxed">
+      <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-5">
         {project.description}
       </p>
+      <span className="text-xs md:text-sm text-gray-400 font-mono break-all">
+        {project.path}
+      </span>
     </a>
+  );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 分组展示组件
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface ProjectSectionProps {
+  title: string;
+  description: string;
+  projects: Project[];
+}
+
+function ProjectSection({
+  title,
+  description,
+  projects,
+}: ProjectSectionProps) {
+  return (
+    <section className="mb-12 md:mb-20">
+      <div className="mb-6 md:mb-8 pb-4 md:pb-5 border-b border-gray-300">
+        <h2 className="text-sm md:text-base font-semibold uppercase tracking-wider text-gray-800 mb-2">
+          {title}
+        </h2>
+        <p className="text-sm md:text-base text-gray-600">{description}</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+        {projects.map((project) => (
+          <ProjectCard key={project.path} project={project} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -86,21 +113,33 @@ function ProjectCard({ project }: { project: Project }) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export default function Home() {
+  const agentProjects = PROJECTS.filter((p) => p.type === "agent");
+  const baselineProjects = PROJECTS.filter((p) => p.type === "baseline");
+
   return (
-    <main className="max-w-4xl mx-auto px-8 py-12">
-      <h1 className="text-3xl font-bold pb-4 mb-8 border-b-2 border-gray-200 text-gray-900">
-        COMP7103 Project Examples
-      </h1>
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-12 md:py-20">
+        <header className="mb-12 md:mb-20">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-light text-gray-900 mb-4 md:mb-5 tracking-tight">
+            COMP7103 Project Examples
+          </h1>
+          <p className="text-base md:text-lg text-gray-600 max-w-2xl leading-relaxed">
+            A collection of arXiv CS Daily implementations demonstrating
+            different development approaches.
+          </p>
+        </header>
 
-      <p className="mb-8 text-lg text-gray-600 leading-relaxed">
-        A collection of arXiv CS Daily implementations demonstrating different
-        development approaches.
-      </p>
+        <ProjectSection
+          title="Code Agent"
+          description="Agent-driven implementations using different LLM backends"
+          projects={agentProjects}
+        />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {PROJECTS.map((project) => (
-          <ProjectCard key={project.path} project={project} />
-        ))}
+        <ProjectSection
+          title="Baseline"
+          description="Traditional AI-assisted development implementations"
+          projects={baselineProjects}
+        />
       </div>
     </main>
   );
