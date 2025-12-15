@@ -71,7 +71,7 @@ class StreamingPanel:
         self._live = Live(
             grid,
             console=console,
-            refresh_per_second=15,
+            refresh_per_second=10,  # Reduced to prevent flickering
             vertical_overflow="visible",
         )
         self._live.start()

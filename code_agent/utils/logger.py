@@ -35,14 +35,25 @@ def setup_logger(name: str = "code_agent", level: int = logging.INFO) -> logging
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setLevel(logging.DEBUG)
 
+    # Includes: Timestamp, Logger Name, Level, Source File:Line, Message
+    file_formatter = logging.Formatter(
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler.setFormatter(file_formatter)
+
     # Configure root logger
     # We set the root level to DEBUG so the file handler receives everything
     logging.basicConfig(
         level=logging.DEBUG,
-        format="%(message)s",
-        datefmt="[%X]",
         handlers=[console_handler, file_handler],
     )
+
+    # Suppress noisy libraries
+    logging.getLogger("markdown_it").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
 
     logger = logging.getLogger(name)
     return logger
