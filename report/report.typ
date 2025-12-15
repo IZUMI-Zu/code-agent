@@ -923,8 +923,11 @@ uv sync
 cat > .env << EOF
 OPENAI_API_KEY=your_key
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
 REASONING_MODEL=qwen/qwen3-coder-plus
 LIGHTWEIGHT_MODEL=openai/gpt-4o-mini
+
+BRAVE_API_KEY=your_brave_key
 EOF
 
 # Execution
