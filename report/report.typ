@@ -130,11 +130,12 @@ Our architecture decomposes these concerns into specialized agents with distinct
     content((6.2, -5.5), anchor: "west")[State Update]
   }),
   caption: [System Architecture and Data Flow],
-)
+) <fig-arch>
 
 == Agent Specification
 
 #figure(
+  kind: table,
   styled-table(
     columns: (0.9fr, 1.8fr, 1.8fr, 1fr),
     align: (left, left, left, left),
@@ -160,7 +161,7 @@ Our architecture decomposes these concerns into specialized agents with distinct
     [Structured review verdict],
   ),
   caption: [Agent Specifications and Access Control],
-)
+) <tbl-agent-specs>
 
 The tool access restriction is enforced at registration time. When creating worker agents, we filter the global tool registry:
 
@@ -195,6 +196,7 @@ State transitions are deterministic functions of current phase and agent outputs
 The workflow implements a finite state machine with conditional edges:
 
 #figure(
+  kind: table,
   styled-table(
     columns: (0.9fr, 1.8fr, 1.5fr),
     align: (left, left, left),
@@ -207,7 +209,7 @@ The workflow implements a finite state machine with conditional edges:
     [Any], [iteration_count ≥ max_iterations], [FINISH (safety termination)],
   ),
   caption: [State Transition Rules],
-)
+) <tbl-state-transitions>
 
 The critical innovation is the *Reviewing → Coding* edge, which implements feedback-based iteration. When Reviewer outputs `review_status = "needs_fixes"`, the Supervisor routes back to Coder with `issues_found` injected into message context.
 
@@ -215,10 +217,10 @@ Safety constraint: `max_iterations = 15` prevents infinite loops when feedback f
 
 === System Execution Example
 
-To illustrate the multi-agent collaboration in practice, Figures 3-5 show a representative execution trace demonstrating the complete workflow: planning decomposition, safety mechanisms, and reviewer check.
+To illustrate the multi-agent collaboration in practice, @fig-planner, @fig-hitl, and @fig-reviewer show a representative execution trace demonstrating the complete workflow: planning decomposition, safety mechanisms, and reviewer check.
 
 #figure(
-  image("images/planner-agent-output.png", width: 100%),
+  image("images/planner-agent-output.png", width: 90%),
   caption: [Planner Agent execution trace.]
 ) <fig-planner>
 
@@ -280,7 +282,7 @@ To illustrate the multi-agent collaboration in practice, Figures 3-5 show a repr
     line("done", "end", mark: (end: ">"), stroke: 1.5pt)
   }),
   caption: [Agent State Transition Diagram],
-)
+) <fig-state-diagram>
 
 = Implementation Details
 
@@ -377,7 +379,7 @@ Each agent follows a mandatory four-step protocol enforced through system prompt
     content("check", anchor: "west", padding: 0.1, text(size: 0.8em, fill: gray)[check])
   }),
   caption: [SENSE-THINK-ACT-VERIFY Protocol],
-)
+) <fig-protocol>
 
 Example enforcement in Planner prompt:
 
@@ -500,6 +502,7 @@ This specification exercises full-stack capabilities: API integration, state man
 We evaluate the same architectural implementation with three LLM backends:
 
 #figure(
+  kind: table,
   styled-table(
     columns: (auto, 1fr, 1fr, 1fr),
     align: (left, center, center, center),
@@ -512,8 +515,8 @@ We evaluate the same architectural implementation with three LLM backends:
     [CORS], [Required prompt], [Autonomous], [Required prompt],
     [Self-Correction], [0], [1 (Tailwind)], [0],
   ),
-  caption: [Multi-Model Performance Comparison (Code Agent) \ #super[†]Metrics represent optimal performance path; see §6.3 for stability analysis],
-)
+  caption: [Multi-Model Performance Comparison (Code Agent) \ #super[†]Metrics represent optimal performance path; see @sec-stability for stability analysis],
+) <tbl-multi-model>
 
 \
 
@@ -527,7 +530,7 @@ We evaluate the same architectural implementation with three LLM backends:
 
 *Visual Comparison*:
 
-Figure 6 presents homepage implementations across all three models. While visual design remains consistent (category navigation grid, clean typography, responsive layout), architectural inspection reveals fundamental divergence in CORS handling strategies (Figure 7).
+@fig-homepage-comparison presents homepage implementations across all three models. 
 
 #figure(
   grid(
@@ -552,59 +555,16 @@ Figure 6 presents homepage implementations across all three models. While visual
   caption: [Visual comparison of generated homepages across models.]
 ) <fig-homepage-comparison>
 
-*CORS Resolution Divergence*:
+Source code is available at #link("https://github.com/IZUMI-Zu/code-agent/tree/main/examples")[GitHub Repo].
 
-Code inspection reveals fundamentally different architectural strategies despite identical requirements. Claude and Qwen configured Vite's development proxy:
-
-```javascript
-// vite.config.js (Claude/Qwen implementations)
-export default {
-  server: {
-    proxy: {
-      '/api': {
-        target: 'https://export.arxiv.org',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
-  }
-}
-```
-
-In contrast, DeepSeek autonomously recognized (in one test) CORS constraints and implemented a dedicated Node.js backend proxy with comprehensive error handling:
-
-```javascript
-// server/index.js (DeepSeek implementation)
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-
-const app = express();
-app.use(cors());
-
-app.get('/api/arxiv', async (req, res) => {
-  try {
-    const { data } = await axios.get(
-      `https://export.arxiv.org/api/query${req.url.split('?')[1]}`
-    );
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.listen(3001, () => console.log('Proxy server on port 3001'));
-```
-
-The architectural divergence explains the LOC variance in Table 3. DeepSeek's full-stack implementation naturally requires more code than Claude and Qwen's frontend-only proxy solutions. This validates the "Architectural Preference" (§6.1), where models adopt distinct but valid strategies for identical requirements. Source code is available at #link("https://github.com/IZUMI-Zu/code-agent/tree/main/examples")[GitHub Repo].
-
-*Reproducibility*: Due to inherent LLM non-determinism, exact execution paths may vary even at low temperatures. Reported metrics reflect optimal performance; see §6.3 for a detailed stability analysis.
+*Reproducibility*: Due to inherent LLM non-determinism, exact execution paths may vary even at low temperatures. Reported metrics reflect optimal performance; see @sec-stability for a detailed stability analysis.
 
 == Baseline Comparison
 
 We compare against established single-agent coding assistants:
 
 #figure(
+  kind: table,
   styled-table(
     columns: (auto, 1fr, 1fr),
     align: (left, center, center),
@@ -619,7 +579,7 @@ We compare against established single-agent coding assistants:
     [Backend], [Express], [Vite proxy],
   ),
   caption: [Baseline Tool Performance],
-)
+) <tbl-baseline>
 
 *Critical Observations*:
 
@@ -661,7 +621,7 @@ We compare against established single-agent coding assistants:
     )
   }),
   caption: [Code Size Comparison Across Implementations],
-)
+) <fig-loc>
 
 The observed trend suggests systematic architectural overhead: multi-agent systems produced 2-4x more code than single-agent tools in this experiment.
 
@@ -672,6 +632,7 @@ The optimal balance likely lies between extremes: Gemini's minimalism (704 LOC) 
 Beyond quantitative metrics, we assess functional and structural quality:
 
 #figure(
+  kind: table,
   styled-table(
     columns: (1.5fr, 1.1fr, 1fr, 1fr),
     align: (left, center, center, center),
@@ -683,7 +644,7 @@ Beyond quantitative metrics, we assess functional and structural quality:
     [Test Coverage], [0%], [Partial], [Limited],
   ),
   caption: [Qualitative Quality Assessment],
-)
+) <tbl-quality>
 
 *Critical Gaps*:
 1. *Test Generation*: Most implementations rely on manual validation via `npm run dev`. While we observed an instance where the DeepSeek V3 agent autonomously generated a Vitest configuration and unit tests, this was not a consistent behavior across all runs.
@@ -760,26 +721,8 @@ After:  "Execute: npm install -D tailwindcss postcss autoprefixer
          Create: tailwind.config.js with content: ['./src/**/*.{js,jsx}']"
 ```
 
-= Discussion and Critical Analysis
+= Discussion and Analysis
 
-== Model Dependency Analysis
-
-Performance variance across models reveals architectural limitations:
-
-*Autonomous Capability*:
-- Claude Sonnet 4.5: Zero interventions (requires CORS prompt)
-- DeepSeek Chat v3: Zero interventions (full autonomy)
-- Qwen3 Coder Plus: Three interventions (lacks error recovery)
-
-The architecture amplifies model strengths but cannot compensate for fundamental reasoning deficits. Qwen3's manual fixes primarily involve debugging API integration errors—failures in the *understand-diagnose-fix* loop that no architectural pattern can fully automate.
-
-*Architectural Preference*:
-Model choice affects solution architecture independent of functional requirements:
-- Claude: Prefers Vite proxy (frontend-only solution)
-- DeepSeek: Implements Node.js backend (full-stack solution)
-- Qwen3: Mirrors Claude's preference
-
-This variation likely reflects differences in model training distributions, with DeepSeek potentially having stronger exposure to backend-inclusive project repositories.
 
 
 == Limitations
@@ -795,13 +738,13 @@ Most approaches failed to generate test suites. Reviewers typically validated fu
 1. Checklist-based planning enforcement
 2. Post-generation validation suite
 
-== Reproducibility and Stability Analysis
+== Reproducibility and Stability Analysis <sec-stability>
 
 Multi-agent LLM systems exhibit inherent non-determinism that impacts experimental reproducibility. We identify three primary sources of variance:
 
 *1. Stochastic Sampling*
 
-Despite setting `temperature=0`, modern LLM APIs do not guarantee bitwise-identical outputs across invocations. We observed:
+Modern LLM APIs do not guarantee bitwise-identical outputs across invocations. We observed:
 - *Tool Call Ordering*: Planner may execute `list_files()` → `web_search()` or vice versa with identical results, but different token consumption.
 - *Prompt Sensitivity*: Adding whitespace or reordering examples in system prompts can shift model behavior differently.
 
@@ -814,7 +757,7 @@ Infrastructure factors beyond our control:
 
 *Implications for Evaluation*
 
-Our reported metrics (Table 3) reflect *best-case successful runs* rather than average performance:
+Our reported metrics (@tbl-multi-model) reflect *best-case successful runs* rather than average performance:
 - "0 interventions" means the system *can* achieve full autonomy, not that it *always* does
 - Actual success rate (zero intervention + functional correctness): ~60% for Claude/DeepSeek, ~30% for Qwen
 - Failed runs typically require 1-2 manual interventions to debug and fix.
@@ -891,7 +834,7 @@ This work demonstrates that multi-agent collaborative systems can autonomously g
     content("5", anchor: "south-west", padding: 0.2)[5. Pass]
   }),
   caption: [Agent Workflow Sequence],
-)
+) <fig-workflow>
 
 *State Transitions*:
 - Planning phase terminates on `submit_plan` tool invocation
