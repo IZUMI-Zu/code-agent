@@ -1,5 +1,7 @@
 # Code Agent
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-000000?style=flat-square&logo=vercel&logoColor=white)](https://code-agent-example.vercel.app)
+
 A multi-agent code assistant powered by LangGraph that orchestrates Planner, Coder, and Reviewer agents to autonomously handle software development tasks.
 
 ## What & Why
@@ -85,20 +87,20 @@ Complete arXiv CS Daily applications built with different tools for comparison. 
 
 Code Agent examples using different LLM providers:
 
-| Model                  | Path                                | Language   | Rounds | Fixes | Notes                          |
-| ---------------------- | ----------------------------------- | ---------- | ------ | ----- | ------------------------------ |
-| **Claude Sonnet 4.5**  | `examples/code-agent/claude-sonnet-4.5/` | JavaScript | 3      | 0     | Clean implementation           |
-| **DeepSeek Chat v3**   | `examples/code-agent/deepseek-v3/`       | TypeScript | 2      | 0     | Node proxy + Tailwind fix      |
-| **Qwen3 Coder Plus**   | `examples/code-agent/qwen3-coder-plus/`  | JavaScript | 3      | 3     | Manual adjustments needed      |
+| Model                 | Path                                     | Language   | Rounds | Fixes | Notes                     |
+| --------------------- | ---------------------------------------- | ---------- | ------ | ----- | ------------------------- |
+| **Claude Sonnet 4.5** | `examples/code-agent/claude-sonnet-4.5/` | JavaScript | 3      | 0     | Clean implementation      |
+| **DeepSeek Chat v3**  | `examples/code-agent/deepseek-v3/`       | TypeScript | 2      | 0     | Node proxy + Tailwind fix |
+| **Qwen3 Coder Plus**  | `examples/code-agent/qwen3-coder-plus/`  | JavaScript | 3      | 3     | Manual adjustments needed |
 
 ### Baseline Tools (Industry Comparison)
 
 Established coding assistants for benchmarking:
 
-| Tool              | Path                          | Language   | Rounds | Code Size | CORS Handling  |
-| ----------------- | ----------------------------- | ---------- | ------ | --------- | -------------- |
-| **Claude Code**   | `examples/baseline/claude-code/` | TypeScript | 2      | 656 LOC   | Auto + Backend |
-| **Gemini CLI**    | `examples/baseline/gemini/`      | TypeScript | 3      | 420 LOC   | Auto-detected  |
+| Tool            | Path                             | Language   | Rounds | Code Size | CORS Handling  |
+| --------------- | -------------------------------- | ---------- | ------ | --------- | -------------- |
+| **Claude Code** | `examples/baseline/claude-code/` | TypeScript | 2      | 656 LOC   | Auto + Backend |
+| **Gemini CLI**  | `examples/baseline/gemini/`      | TypeScript | 3      | 420 LOC   | Auto-detected  |
 
 ### Quick Run
 
