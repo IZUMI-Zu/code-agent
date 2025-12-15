@@ -8,20 +8,27 @@ def parse_args():
         "--workspace",
         "-w",
         type=str,
-        default=".",
-        help="Path to the workspace directory (default: current directory)",
+        default=None,  # None = use .env config or current directory
+        help="Path to the workspace directory (default: from .env WORKSPACE_ROOT, or current directory)",
     )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    workspace_path = Path(args.workspace).expanduser().resolve()
     from code_agent.config import settings
 
-    settings.override_workspace(workspace_path)
-
-    print(f"📂 Workspace set to: {workspace_path}")
+    if args.workspace is not None:
+        # User explicitly specified -w, override .env config
+        workspace_path = Path(args.workspace).expanduser().resolve()
+        settings.override_workspace(workspace_path)
+        print(f"📂 Workspace: {settings.workspace_root} (from -w)")
+    else:
+        # Use .env config (Pydantic auto-loads WORKSPACE_ROOT)
+        # Ensure relative paths from .env are resolved to absolute
+        if not settings.workspace_root.is_absolute():
+            settings.workspace_root = settings.workspace_root.resolve()
+        print(f"📂 Workspace: {settings.workspace_root}")
 
     from code_agent.ui.app import main as run_app
 
