@@ -1,4 +1,6 @@
 // Some inspiration for this template came from <https://github.com/talal/ilm>
+#import "@preview/fontawesome:0.5.0": *
+
 #let link-color = rgb("#3282B8")
 #let muted-color = luma(160)
 #let block-bg-color = luma(240)
@@ -12,6 +14,7 @@
     author: "Anonymous",
     header: "",
     date: datetime.today().display("[month repr:long] [day padding:zero], [year repr:full]"),
+    repo: none,
 
     // Paper size
     paper-size: "a4",
@@ -149,11 +152,20 @@
         } else {
             align(center, text(font: body-font, style: "italic", author))
         }
+        if repo != none {
+            v(2pt)
+            let display-text = if repo.contains("github.com/") {
+                "GitHub:" + repo.split("github.com/").last()
+            } else {
+                repo
+            }
+            align(center, text(font: body-font)[#fa-github(fill: muted-color) #h(2pt) #text(font: raw-font, size: raw-font-size, link(repo)[#display-text])])
+        }
         if date != none {
             v(2pt)
             align(center, text(font: body-font, date))
         }
-        v(5em)
+        v(1em)
     }
 
     // Main body

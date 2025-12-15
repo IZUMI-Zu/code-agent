@@ -1,0 +1,853 @@
+#import "lib.typ": *
+#import "@preview/lovelace:0.3.0": *
+#import "@preview/codly:1.3.0": *
+#import "@preview/codly-languages:0.1.1": *
+#import "@preview/cetz:0.4.2"
+#import "@preview/cetz-plot:0.1.3": plot, chart
+
+#let styled-table(
+  columns: auto,
+  align: auto,
+  highlight-rows: (),
+  breakable: true,
+  ..args
+) = {
+  show table: set block(breakable: breakable)
+  set par(justify: false)
+
+  table(
+    columns: columns,
+    inset: 14pt,
+    align: if align == auto {
+      horizon
+    } else if type(align) == array {
+      align.map(a => a + horizon)
+    } else {
+      align + horizon
+    },
+    stroke: none,
+    fill: (x, y) => if y == 0 {
+      rgb("#eef2ff")
+    } else if y in highlight-rows {
+      rgb("#dcfce7")
+    } else if calc.odd(y) {
+      rgb("#f1f5f9")
+    } else {
+      white
+    },
+    ..args
+  )
+}
+
+#let header-text(content) = text(fill: rgb("#1e40af"), weight: "bold")[#content]
+
+#show: kunskap.with(
+    title: [Code Agent: Multi-Agent Coding System],
+    author: (
+        "Yang Jianming\nStudent ID: 3036659297",
+        "ZU BINSHUO\nStudent ID: 3036657457",
+    ),
+    header: "COMP7103C Data Mining",
+    date: datetime(day: 14, month: 12, year: 2025).display("[month repr:long] [day padding:zero], [year repr:full]"),
+    repo: "https://github.com/IZUMI-Zu/code-agent",
+)
+
+#set heading(numbering: "1.1")
+#show cite: super
+
+#show: codly-init.with()
+#codly(languages: codly-languages, zebra-fill: rgb("#f4f7fb"))
+
+= Introduction
+
+The emergence of Large Language Models (LLMs) has enabled a paradigm shift from manual software development to AI-assisted code generation. While single-agent systems demonstrate proficiency in generating isolated code snippets, they exhibit fundamental limitations when tasked with complete software project construction: context dilution across multiple concerns, lack of role specialization, and absence of systematic quality assurance mechanisms.
+
+This report presents a multi-agent collaborative system that addresses these limitations through architectural decomposition. The system orchestrates three specialized agents—Planner, Coder, and Reviewer—under a Supervisor's dynamic routing mechanism, enabling autonomous generation of complete, functional software projects from natural language specifications.
+
+== Core Contributions
+
+The system introduces three key architectural innovations:
+
+*Dynamic State-Based Orchestration*: A Supervisor agent analyzes conversation state to route tasks dynamically, enabling feedback loops rather than fixed workflows.
+
+*Failure-Aware Context Injection*: When Reviewer detects defects, the system injects failure descriptions into Coder's subsequent invocation context, creating an explicit feedback channel. This mechanism enables self-correction without manual intervention.
+
+== Evaluation Methodology
+
+We evaluate the system through controlled experiments comparing:
+1. *Multi-Model Performance*: Same system with three LLM backends (Claude Sonnet 4.5, DeepSeek Chat (DeepSeek-V3.2), Qwen3 Coder Plus)
+2. *Baseline Comparison*: Against industry agent tools (Claude Code, Gemini CLI)
+
+All implementations target identical requirements: an arXiv CS Daily web application with domain navigation, daily paper lists, and citation generation.
+
+= System Architecture
+
+== Design Rationale
+
+Single-agent architectures conflate three cognitively distinct tasks into one prompt: architectural planning (requires breadth of framework knowledge), code implementation (requires depth in syntax and APIs), and quality validation (requires adversarial mindset). This conflation leads to degraded performance across all domains.
+
+Our architecture decomposes these concerns into specialized agents with distinct system prompts, tool access, and termination conditions. The Supervisor coordinates transitions based on state analysis rather than predetermined sequences, enabling iterative refinement.
+
+#figure(
+  cetz.canvas({
+    import cetz.draw: *
+    
+    let agent-style = (fill: rgb("#e0f2fe"), stroke: rgb("#0284c7"), radius: 0.5, padding: 0.5)
+    let supervisor-style = (fill: rgb("#fef3c7"), stroke: rgb("#d97706"), radius: 0.5, padding: 0.5)
+    let state-style = (fill: rgb("#f3f4f6"), stroke: rgb("#4b5563"), radius: 0.2, padding: 0.5)
+    let user-style = (fill: rgb("#dcfce7"), stroke: rgb("#16a34a"), radius: 0.5, padding: 0.5)
+
+    // Nodes
+    content((0, 0), [*User*], name: "user", ..user-style)
+    content((0, -3), [*Supervisor*], name: "supervisor", ..supervisor-style)
+    
+    // Agent Group
+    rect((-5, -6.5), (5, -4.5), fill: rgb("#f8fafc"), stroke: (dash: "dashed"), name: "agents-bg")
+    content((-3.9, -4.9), text(size: 0.8em, fill: gray)[*Agent Layer*])
+    
+    content((-3.5, -5.5), [Planner], name: "planner", ..agent-style)
+    content((0, -5.5), [Coder], name: "coder", ..agent-style)
+    content((3.5, -5.5), [Reviewer], name: "reviewer", ..agent-style)
+    
+    content((0, -8.5), [*Shared State*], name: "state", ..state-style)
+
+    // Edges
+    line("user", "supervisor", mark: (end: ">"), name: "msg", stroke: 1.5pt)
+    content("msg", anchor: "west", padding: .2)[Natural Language]
+
+    // Supervisor -> Agents
+    line("supervisor", "planner", mark: (end: ">"), stroke: 1.2pt)
+    line("supervisor", "coder", mark: (end: ">"), stroke: 1.2pt)
+    line("supervisor", "reviewer", mark: (end: ">"), stroke: 1.2pt)
+
+    // Agents -> State
+    line("planner", "state", mark: (end: ">"), stroke: 1.2pt)
+    line("coder", "state", mark: (end: ">"), stroke: 1.2pt)
+    line("reviewer", "state", mark: (end: ">"), stroke: 1.2pt)
+
+    // State -> Supervisor (Feedback Loop)
+    line("state", (6, -8.5), (6, -3), "supervisor", mark: (end: ">"), stroke: (paint: gray, dash: "dashed"))
+    content((6.2, -5.5), anchor: "west")[State Update]
+  }),
+  caption: [System Architecture and Data Flow],
+)
+
+== Agent Specification
+
+#figure(
+  styled-table(
+    columns: (0.9fr, 1.8fr, 1.8fr, 1fr),
+    align: (left, left, left, left),
+    table.header([*Agent*], [*Responsibility*], [*Tool Access*], [*Termination*]),
+    [Supervisor],
+    [State analysis and routing],
+    [None],
+    [pure routing],
+
+    [Planner],
+    [Architecture design, task decomposition],
+    [read_file, list_files, web_search, submit_plan],
+    [submit_plan invocation],
+
+    [Coder],
+    [Implementation, dependency management],
+    [All filesystem + shell (excludes submit_plan)],
+    [Explicit completion signal],
+
+    [Reviewer],
+    [Quality validation, testing],
+    [read_file, list_files, shell (no write access)],
+    [Structured review verdict],
+  ),
+  caption: [Agent Specifications and Access Control],
+)
+
+The tool access restriction is enforced at registration time. When creating worker agents, we filter the global tool registry:
+
+```python
+PLANNER_TOOLS = {"read_file", "list_files", "submit_plan", "..."}
+REVIEWER_TOOLS = {"read_file", "list_files", "shell", "grep_search"}
+
+lc_tools_for_planner = [t for t in all_tools if t.name in PLANNER_TOOLS]
+lc_tools_for_reviewer = [t for t in all_tools if t.name in REVIEWER_TOOLS]
+```
+
+This access control prevents category errors: Planner cannot write code prematurely, Reviewer cannot modify implementations under test.
+
+== State Management
+
+The system maintains shared state across agent transitions using LangGraph's `AgentState` structure:
+
+```python
+class AgentState(TypedDict):
+    messages: list[BaseMessage]     # Full conversation history
+    plan: Optional[Plan]             # Submitted implementation plan
+    phase: str                       # Current workflow phase
+    review_status: str               # Reviewer verdict
+    issues_found: list[str]          # Detected defects
+    iteration_count: int             # Feedback loop counter
+```
+
+State transitions are deterministic functions of current phase and agent outputs. The Supervisor implements this transition logic without accessing tools, ensuring separation between orchestration and execution.
+
+== Workflow Transitions
+
+The workflow implements a finite state machine with conditional edges:
+
+#figure(
+  styled-table(
+    columns: (0.9fr, 1.8fr, 1.5fr),
+    align: (left, left, left),
+    table.header([*Source Phase*], [*Condition*], [*Target Agent*]),
+    [START], [User message received], [Planner],
+    [Planning], [submit_plan executed], [Coder],
+    [Coding], [Completion signaled], [Reviewer],
+    [Reviewing], [review_status = "passed"], [FINISH],
+    [Reviewing], [review_status = "needs_fixes"], [Coder (feedback loop)],
+    [Any], [iteration_count ≥ max_iterations], [FINISH (safety termination)],
+  ),
+  caption: [State Transition Rules],
+)
+
+The critical innovation is the *Reviewing → Coding* edge, which implements feedback-based iteration. When Reviewer outputs `review_status = "needs_fixes"`, the Supervisor routes back to Coder with `issues_found` injected into message context.
+
+Safety constraint: `max_iterations = 15` prevents infinite loops when feedback fails to converge.
+
+#figure(
+  cetz.canvas(length: 0.7cm, {
+    import cetz.draw: *
+    
+    let state-style = (fill: white, stroke: black, radius: 0.5, padding: 0.5)
+    let active-style = (fill: rgb("#dbeafe"), stroke: rgb("#2563eb"), radius: 0.5, padding: 0.5)
+    
+    // Start/End
+    circle((0, 0), radius: 0.3, fill: black, name: "start")
+    
+    // Main Flow
+    content((3, 0), [Idle], name: "idle", ..state-style)
+    content((7, 0), [Planning], name: "planning", ..active-style)
+    content((11, 0), [Coding], name: "coding", ..active-style)
+    
+    // Review Sub-process
+    rect((13, -3), (17, 3), fill: rgb("#f0fdf4"), stroke: (dash: "dashed", paint: rgb("#16a34a")), name: "review-box", radius: 0.5)
+    content((15, -2.5), text(fill: rgb("#166534"))[*Review Phase*])
+    content((15, 0), [Analyzing], name: "analyzing", ..active-style)
+    
+    // End States
+    content((11, -4), [Done], name: "done", ..state-style)
+    circle((8.5, -4), radius: 0.3, fill: black, name: "end")
+    circle((8.5, -4), radius: 0.4, stroke: black)
+
+    // Transitions
+    line("start", "idle", mark: (end: ">"), stroke: 1.5pt)
+    
+    line("idle", "planning", mark: (end: ">"), name: "input", stroke: 1.5pt)
+    content("input", anchor: "south", padding: .2)[User Input]
+    
+    line("planning", "coding", mark: (end: ">"), name: "plan", stroke: 1.5pt)
+    content("plan", anchor: "south", padding: .2)[Plan]
+    
+    line("coding", "analyzing", mark: (end: ">"), name: "impl", stroke: 1.5pt)
+    content("impl", anchor: "south", padding: .2)[Complete]
+    
+    // Feedback Loop (Critical)
+    line("analyzing", (15, 4), (11, 4), "coding", mark: (end: ">"), name: "fail", stroke: (paint: rgb("#dc2626"), thickness: 1.5pt))
+    content("fail", anchor: "south", padding: 1, text(fill: rgb("#dc2626"))[Issues Found])
+    
+    // Success Path
+    line("analyzing", "done", mark: (end: ">"), name: "pass", stroke: (paint: rgb("#16a34a"), thickness: 1.5pt))
+    content("pass", anchor: "east", padding: .4, text(fill: rgb("#16a34a"))[Passed])
+    
+    line("done", "end", mark: (end: ">"), stroke: 1.5pt)
+  }),
+  caption: [Agent State Transition Diagram],
+)
+
+= Implementation Details
+
+== Tool Function Calling
+
+Agents interact with the environment through structured tool calls. Each tool is a Pydantic model with type-validated parameters:
+
+```python
+class WriteFileTool(BaseTool):
+    name: str = "write_file"
+
+    class Parameters(BaseModel):
+        file_path: str
+        content: str
+
+    def execute(self, file_path: str, content: str) -> str:
+        if not is_within_workspace(file_path):
+            raise SecurityError("Path outside workspace")
+        Path(file_path).write_text(content, encoding="utf-8")
+```
+
+Security enforcement occurs at tool execution time through workspace boundary validation. This prevents agents from modifying files outside the designated project directory.
+
+== Human-in-the-Loop Safety
+
+Critical operations require explicit user confirmation before execution:
+
+```python
+def wrap_tool_with_confirmation(tool: BaseTool) -> BaseTool:
+
+    original_execute = tool.execute
+    def confirmed_execute(*args, **kwargs):
+        if not prompt_user_approval(tool.name, kwargs):
+            raise ToolExecutionCancelled()
+        return original_execute(*args, **kwargs)
+
+    tool.execute = confirmed_execute
+    return tool
+```
+
+This mechanism provides transparency (users observe all filesystem modifications) and control (users can reject destructive operations).
+
+== Prompt Engineering Principles
+
+Each agent follows a mandatory four-step protocol enforced through system prompts:
+
+*SENSE-THINK-ACT-VERIFY*:
+1. SENSE: Query environment state (list_files, read_file)
+2. THINK: Output explicit reasoning in `<thinking>` blocks
+3. ACT: Execute write/shell operations
+4. VERIFY: Re-read to confirm changes applied correctly
+
+#figure(
+  cetz.canvas(length: 1.1cm, {
+    import cetz.draw: *
+    
+    let step-style = (fill: rgb("#dbeafe"), stroke: rgb("#2563eb"), radius: 0.5, padding: 0.5)
+    let env-style = (fill: rgb("#f0fdf4"), stroke: rgb("#16a34a"), radius: 0.2)
+    let fail-style = (stroke: (paint: rgb("#dc2626"), dash: "dashed", thickness: 1.5pt))
+    let success-style = (stroke: (paint: rgb("#16a34a"), thickness: 1.5pt))
+    let interact-style = (stroke: (paint: gray, dash: "dashed"))
+
+    // Main Cycle
+    content((0, 0), [*SENSE*], name: "sense", ..step-style)
+    content((3, 0), [*THINK*], name: "think", ..step-style)
+    content((6, 0), [*ACT*], name: "act", ..step-style)
+    content((9, 0), [*VERIFY*], name: "verify", ..step-style)
+    
+    // Environment
+    rect((-0.5, -2.5), (9.5, -1.5), name: "env-box", ..env-style)
+    content("env-box", [*Environment / Filesystem*])
+
+    // Flow Arrows
+    line("sense", "think", mark: (end: ">"), stroke: 1.5pt)
+    line("think", "act", mark: (end: ">"), stroke: 1.5pt)
+    line("act", "verify", mark: (end: ">"), stroke: 1.5pt)
+    
+    // Feedback Loop
+    line("verify", (9, 1.5), (3, 1.5), "think", mark: (end: ">"), name: "fail", ..fail-style)
+    content("fail", anchor: "south", padding: 0.1, text(fill: rgb("#dc2626"), size: 0.8em)[*Failure Detected*])
+    
+    // Success
+    line("verify", (11, 0), mark: (end: ">"), name: "success", ..success-style)
+    content((11, 0), anchor: "west", padding: 0.2, text(fill: rgb("#16a34a"), size: 0.8em)[*Next Step*])
+
+    // Environment Interactions
+    line((0, -1.5), "sense", mark: (end: ">"), ..interact-style, name: "read")
+    content("read", anchor: "east", padding: 0.1, text(size: 0.8em, fill: gray)[read])
+    
+    line("act", (6, -1.5), mark: (end: ">"), ..interact-style, name: "write")
+    content("write", anchor: "west", padding: 0.1, text(size: 0.8em, fill: gray)[write])
+    
+    line((9, -1.5), "verify", mark: (end: ">"), ..interact-style, name: "check")
+    content("check", anchor: "west", padding: 0.1, text(size: 0.8em, fill: gray)[check])
+  }),
+  caption: [SENSE-THINK-ACT-VERIFY Protocol],
+)
+
+Example enforcement in Planner prompt:
+
+```
+MANDATORY WORKFLOW:
+1. list_files(".") to detect existing project structure
+2. If package.json exists, read_file to extract framework version
+3. web_search: "<library> setup for <framework> <version>"
+4. Extract exact commands from search results
+5. Create executable tasks (NOT "Research how to add X")
+```
+
+This explicit procedural specification reduces hallucination of library APIs by forcing external knowledge retrieval.
+
+== Context Injection Strategy
+
+When routing to Coder, the Supervisor injects task plan and previous failures directly into conversation:
+
+```python
+if name == "Coder" and plan:
+    issues = state.get("issues_found", [])
+    context = f"""
+    Plan: {plan.summary}
+    Tasks: {format_tasks(plan.tasks)}
+
+    {"PREVIOUS FAILURES:\n" + format_issues(issues) if issues else ""}
+
+    CRITICAL: list_files() before writing to detect existing work.
+    """
+    state["messages"] = [SystemMessage(content=context), *state["messages"]]
+```
+
+This injection serves dual purposes:
+1. *Anti-duplication*: Coder checks workspace before writing
+2. *Failure memory*: Previous review feedback explicitly provided
+
+Without this injection, Coder lacks awareness of review feedback, preventing convergence in feedback loops.
+
+== Structured Output Parsing
+
+Early implementations used regex matching for Reviewer verdicts ("REVIEW: PASSED"). This approach failed when LLMs added surrounding text. We enforce structured JSON output:
+
+```python
+# Reviewer prompt specifies exact schema
+"""
+Output format (JSON):
+{
+  "status": "passed" | "needs_fixes",
+  "files_checked": ["file1.js", ...],
+  "issues": ["Issue 1: ...", ...],
+  "summary": "..."
+}
+"""
+
+# Supervisor parses with fallback
+try:
+    review_data = json.loads(msg.content)
+    review_result = ReviewResult(**review_data)  # Pydantic validation
+except json.JSONDecodeError:
+    # Fallback to string matching for robustness
+```
+
+== Context Window Management
+
+Modern LLMs provide 128k+ token contexts, but multi-round projects can exceed this. We implement selective message trimming:
+
+```python
+def trim_messages(messages, max_tokens=100000, keep_last=30):
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    other_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
+
+    if estimate_tokens(messages) < max_tokens:
+        return messages
+
+    return system_msgs + other_msgs[-keep_last:]
+```
+
+Critical invariant: SystemMessages (containing agent instructions) are never removed. This prevents catastrophic failures where agents forget their role.
+
+= Experimental Evaluation
+
+== Test Case Specification
+
+All systems implement identical requirements to enable controlled comparison:
+
+*Functional Requirements*:
+- Domain-specific navigation (20+ CS categories: AI, CV, NLP, etc.)
+- Daily paper list with metadata (title, authors, submission date, field tags)
+- Paper detail pages with PDF links and citation generation (BibTeX, APA)
+- One-click citation copy functionality
+
+*Technical Constraints*:
+- Data source: arXiv Export API (XML format)
+- CORS handling required (API on different origin)
+- Responsive design (desktop/tablet/mobile)
+- Production-ready (no placeholder implementations)
+
+This specification exercises full-stack capabilities: API integration, state management, routing, UI components, and build configuration.
+
+== Multi-Model Performance
+
+We evaluate the same architectural implementation with three LLM backends:
+
+#figure(
+  styled-table(
+    columns: (auto, 1fr, 1fr, 1fr),
+    align: (left, center, center, center),
+    table.header([*Metric*], [*Claude 4.5*], [*DeepSeek V3.2*], [*Qwen3 Coder*]),
+    [Language], [JavaScript], [TypeScript], [JavaScript],
+    [Rounds], [3], [2], [3],
+    [Interventions], [0], [0], [3],
+    [LOC], [~1,528], [~2,396], [~1,840],
+    [Backend], [Vite proxy], [Node.js Express], [Vite proxy],
+    [CORS], [Required prompt], [Autonomous], [Required prompt],
+    [Self-Correction], [0], [1 (Tailwind)], [0],
+  ),
+  caption: [Multi-Model Performance Comparison (Code Agent)],
+)
+
+\
+
+*Key Findings*:
+
+*Claude Sonnet 4.5* achieved zero-intervention autonomous generation in our tests, though it required explicit CORS configuration prompting. The generated code demonstrated clean separation of concerns (1,528 LOC across organized directories).
+
+*DeepSeek Chat v3* exhibited strong autonomous problem-solving capabilities, such as auto-detecting CORS constraints and implementing a Node.js backend proxy. It also demonstrated self-correction by autonomously downgrading Tailwind CSS from 4.x to 3.x after a build failure. However, it produced the highest LOC (2,396) due to TypeScript overhead and complete backend implementation.
+
+*Qwen3 Coder Plus* required three manual interventions for CORS configuration and API integration issues during our evaluation. It generated mid-range LOC (1,840) but lacked autonomous error recovery in these instances, necessitating human debugging.
+
+== Baseline Comparison
+
+We compare against established single-agent coding assistants:
+
+#figure(
+  styled-table(
+    columns: (auto, 1fr, 1fr),
+    align: (left, center, center),
+    table.header([*Metric*], [*Claude Code*], [*Gemini CLI*]),
+    [Architecture], [Single-agent], [Single-agent],
+    [Model], [Claude 4.5], [Gemini 3 Pro],
+    [Language], [TypeScript], [TypeScript],
+    [Rounds], [2], [3],
+    [Interventions], [0], [0],
+    [LOC], [791], [704],
+    [CORS], [Autonomous], [Autonomous],
+    [Backend], [Express], [Vite proxy],
+  ),
+  caption: [Baseline Tool Performance],
+)
+
+*Critical Observations*:
+
+*Code Density*: Baseline tools generate 40-65% less code than Code Agent (704-791 LOC vs. 1,528-2,396 LOC). Analysis reveals three contributing factors:
+
+1. *Architectural Overhead*: Multi-agent systems add planning artifacts (task lists, progress tracking) absent in single-agent flows
+2. *Component Granularity*: Code Agent produces finer-grained component decomposition (separate service layers, utility modules)
+3. *Co-location Strategies*: Baseline tools favor CSS-in-JS or co-located styles, reducing file count
+
+*CORS Handling*: Both baseline tools autonomously detected and configured CORS solutions in our tests. For the Code Agent, we only observed this capability with DeepSeek v3; Claude and Qwen3 variants required explicit prompting. This suggests a potential gap in the Planner's deployment-concern anticipation.
+
+== Lines of Code Analysis
+
+#figure(
+  cetz.canvas({
+    import cetz.draw: *
+    plot.plot(
+      size: (12, 6),
+      x-tick-step: none,
+      x-ticks: (
+        (0, "Gemini"),
+        (1, "Claude Code"),
+        (2, "Claude Agent"),
+        (3, "Qwen Agent"),
+        (4, "DeepSeek Agent")
+      ),
+      y-tick-step: 500,
+      y-min: 0,
+      y-max: 2500,
+      x-label: "Implementation",
+      y-label: "Total LOC",
+      {
+        plot.add-bar(
+          ((0, 704), (1, 791), (2, 1528), (3, 1840), (4, 2396)),
+          bar-width: 0.5,
+          style: (stroke: none, fill: rgb("#3b82f6")),
+        )
+      }
+    )
+  }),
+  caption: [Code Size Comparison Across Implementations],
+)
+
+The observed trend suggests systematic architectural overhead: multi-agent systems produced 2-4x more code than single-agent tools in this experiment.
+
+The optimal balance likely lies between extremes: Gemini's minimalism (704 LOC) risks insufficient abstraction for maintenance, while DeepSeek's comprehensiveness (2,396 LOC) may constitute over-engineering for the scope.
+
+== Qualitative Code Quality
+
+Beyond quantitative metrics, we assess functional and structural quality:
+
+#figure(
+  styled-table(
+    columns: (1.5fr, 1.1fr, 1fr, 1fr),
+    align: (left, center, center, center),
+    table.header([*Quality Dimension*], [*Baseline Avg*], [*Code Agent Best*], [*Code Agent Avg*]),
+    [Functional Completeness], [100%], [100%], [95%],
+    [Type Safety], [Full (TypeScript)], [Partial], [Mixed],
+    [Error Handling], [Basic (try-catch)], [Comprehensive], [Good],
+    [Code Organization], [Excellent], [Good], [Good],
+    [Accessibility], [Basic], [Partial], [Limited],
+    [Performance Optimization], [None], [None], [None],
+    [Test Coverage], [0%], [Partial], [Limited],
+  ),
+  caption: [Qualitative Quality Assessment],
+)
+
+*Critical Gaps*:
+1. *Test Generation*: Most implementations rely on manual validation via `npm run dev`. While we observed an instance where the DeepSeek V3 agent autonomously generated a Vitest configuration and unit tests, this was not a consistent behavior across all runs.
+2. *Performance*: No implementation includes optimization (virtualization, caching, code splitting)
+
+While performance optimization remains a systematic limitation across all approaches, the sporadic emergence of test generation in DeepSeek V3 indicates that advanced models are beginning to address quality assurance gaps, though reliability remains an issue.
+
+= Challenges and Solutions
+
+== Challenge: Infinite Feedback Loops
+
+*Problem Statement*: Initial implementation permitted unbounded Reviewer → Coder iterations. Observed failure mode: Coder introduces bug A, Reviewer flags it, Coder fixes A but introduces bug B, cycle repeats indefinitely.
+
+*Root Cause Analysis*: Absence of convergence guarantees in feedback mechanism. Unlike mathematical optimization with convergence proofs, LLM-based correction lacks formal termination conditions.
+
+*Solution*: Implement iteration budget with forced termination:
+
+```python
+if iteration_count >= max_iterations:
+    logger.error(f"Max iterations ({max_iterations}) exceeded")
+    return {"next": "FINISH", "phase": "done"}
+```
+
+*Impact*: Eliminates infinite loops while preserving multi-round correction capability. Default `max_iterations = 15` permits adequate refinement for typical projects.
+
+== Challenge: System Prompt Loss
+
+*Problem Statement*: Early implementation used LangChain's `SummarizationMiddleware` to compress conversation history. Result: catastrophic failure where agents forgot their role and generated irrelevant outputs.
+
+*Root Cause*: Middleware removed `SystemMessage` objects containing core agent instructions during summarization.
+
+*Attempted Solution 1*: Configure middleware to preserve SystemMessages. Failed due to insufficient API exposure in LangChain.
+
+*Final Solution*: Disable automatic summarization, implement custom trimming:
+
+```python
+def trim_messages(messages, keep_last=30):
+    system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
+    other_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
+    return system_msgs + other_msgs[-keep_last:]
+```
+
+*Lesson*: Middleware designed for cross-cutting concerns (logging, metrics) inappropriate for workflow control. Custom logic provides necessary precision.
+
+== Challenge: Vague Task Specifications
+
+*Problem Statement*: Early Planner versions generated non-executable tasks:
+
+```
+Task 1: Research Tailwind CSS setup
+Task 2: Investigate arXiv API documentation
+Task 3: Learn React Router
+```
+
+Coder executed these by outputting "Research completed" without implementation.
+
+*Solution*: Enforce external knowledge acquisition during planning phase:
+
+```
+CRITICAL WORKFLOW:
+1. Read package.json to extract framework version
+2. web_search: "<library> setup for <framework> <version>"
+3. Extract exact installation commands from results
+4. Create executable task: "Install X via `npm install -D X Y Z`"
+
+NEVER create tasks like "Research how to add X"
+```
+
+*Impact*: Plans transformed from abstract intentions to concrete procedures. Example transformation:
+
+```
+Before: "Research Tailwind CSS setup"
+After:  "Execute: npm install -D tailwindcss postcss autoprefixer
+         Create: tailwind.config.js with content: ['./src/**/*.{js,jsx}']"
+```
+
+= Discussion and Critical Analysis
+
+== Model Dependency Analysis
+
+Performance variance across models reveals architectural limitations:
+
+*Autonomous Capability*:
+- Claude Sonnet 4.5: Zero interventions (requires CORS prompt)
+- DeepSeek Chat v3: Zero interventions (full autonomy)
+- Qwen3 Coder Plus: Three interventions (lacks error recovery)
+
+The architecture amplifies model strengths but cannot compensate for fundamental reasoning deficits. Qwen3's manual fixes primarily involve debugging API integration errors—failures in the *understand-diagnose-fix* loop that no architectural pattern can fully automate.
+
+*Architectural Preference*:
+Model choice affects solution architecture independent of functional requirements:
+- Claude: Prefers Vite proxy (frontend-only solution)
+- DeepSeek: Implements Node.js backend (full-stack solution)
+- Qwen3: Mirrors Claude's preference
+
+This variation likely reflects differences in model training distributions, with DeepSeek potentially having stronger exposure to backend-inclusive project repositories.
+
+
+== Limitations
+
+*Test Generation Gap*:
+Most approaches failed to generate test suites. Reviewers typically validated functionality through runtime execution (`npm run dev`/`npm run build`) without creating unit/integration tests. While we observed one instance where DeepSeek V3 generated a Vitest suite, this capability was not consistently reproduced. Generating comprehensive test cases generally requires:
+1. Understanding invariants (often implicit in requirements)
+2. Identifying edge cases (requires adversarial thinking)
+3. Mocking external dependencies (requires system-level understanding)
+
+*CORS Detection Failure*:
+67% failure rate on autonomous CORS detection reveals systematic gap in deployment-concern anticipation. Root cause: Planner optimizes for functional completeness, not operational readiness. Potential solutions:
+1. Checklist-based planning enforcement
+2. Post-generation validation suite
+
+= Conclusion
+
+This work demonstrates that multi-agent collaborative systems can autonomously generate production-quality software from natural language specifications through architectural decomposition and dynamic orchestration. The Supervisor-Worker architecture with specialized Planner, Coder, and Reviewer agents provides role-specific optimization, systematic quality assurance through feedback loops, and transparent decision-making through human-in-the-loop confirmations.
+
+== Empirical Findings
+
+*Model Performance*: Claude Sonnet 4.5 achieves zero-intervention generation; DeepSeek Chat v3 demonstrates self-correction capability; Qwen3 Coder Plus requires human supervision. This variance reveals that architectural patterns amplify model strengths but cannot compensate for fundamental reasoning deficits.
+
+*Code Quality Trade-offs*: Multi-agent systems produce 2-4x more code than single-agent tools (1,528-2,396 LOC vs. 704-791 LOC). Higher LOC provides modularity and error handling at the cost of initial complexity. Optimal choice depends on project lifespan and maintenance requirements.
+
+*Systematic Gaps*: CORS detection failure (67% miss rate) and inconsistent test generation (DeepSeek V3 produced tests in one instance) indicate areas where current LLM capabilities, regardless of architecture, remain insufficient for full autonomy.
+
+== Future Directions
+
+*Deployment Validation*: Introduce fourth agent that runs production builds, tests deployed applications, and reports configuration issues (CORS, environment variables, asset hosting).
+
+*Cost Optimization*: Implement token budgets with dynamic model selection—use lightweight models (GPT-4o-mini) for simple tasks, reserve expensive models (Claude Sonnet 4.5) for complex reasoning.
+
+*Interactive Planning*: Replace upfront planning with progressive refinement—plan 2-3 tasks, implement, observe results, re-plan. This reduces planning overhead and adapts to discovered constraints.
+
+*Tiered Confirmations*: Classify operations by risk (low: read_file; medium: write_file; high: shell, delete_path) and require confirmation only for medium-high risk actions.
+
+#set heading(numbering: none)
+= Appendix
+
+== A. System Architecture
+
+#figure(
+  cetz.canvas(length: 1cm, {
+    import cetz.draw: *
+    
+    let style = (stroke: black, fill: white, radius: 0.2, padding: 0.5)
+    let supervisor-style = (fill: rgb("#fef3c7"), stroke: rgb("#d97706"), ..style)
+    let agent-style = (fill: rgb("#e0f2fe"), stroke: rgb("#0284c7"), ..style)
+    
+    // Nodes
+    content((0, 0), [Supervisor], name: "sup", ..supervisor-style)
+    
+    content((0, 3), [User], name: "user", ..style)
+    content((-4, 0), [Planner], name: "planner", ..agent-style)
+    content((0, -4), [Coder], name: "coder", ..agent-style)
+    content((4, 0), [Reviewer], name: "reviewer", ..agent-style)
+    content((4, -3), [Finish], name: "end", ..style)
+
+    // Edges
+    // User -> Sup
+    line("user", "sup", mark: (end: ">"), name: "1")
+    content("1", anchor: "east", padding: 0.2)[1. Req]
+
+    // Sup <-> Planner
+    line("sup", "planner", mark: (end: ">"), name: "2a", bend: 30deg)
+    content("2a", anchor: "south", padding: 0.2)[2. Plan]
+    line("planner", "sup", mark: (end: ">"), name: "2b", bend: 30deg)
+
+    // Sup <-> Coder
+    line("sup", "coder", mark: (end: ">"), name: "3a", bend: 30deg)
+    content("3a", anchor: "east", padding: 0.2)[3. Task]
+    line("coder", "sup", mark: (end: ">"), name: "3b", bend: 30deg)
+
+    // Sup <-> Reviewer
+    line("sup", "reviewer", mark: (end: ">"), name: "4a", bend: -30deg)
+    content("4a", anchor: "south", padding: 0.2)[4. Review]
+    line("reviewer", "sup", mark: (end: ">"), name: "4b", bend: -30deg)
+    content("4b", anchor: "north", padding: 0.2)[Verdict]
+
+    // Sup -> End
+    line("sup", "end", mark: (end: ">"), name: "5")
+    content("5", anchor: "south-west", padding: 0.2)[5. Pass]
+  }),
+  caption: [Agent Workflow Sequence],
+)
+
+*State Transitions*:
+- Planning phase terminates on `submit_plan` tool invocation
+- Coding phase terminates on explicit completion signal
+- Reviewing phase terminates on structured verdict (`review_status`)
+- Feedback loop activates when `review_status = "needs_fixes"`
+- Safety termination when `iteration_count ≥ max_iterations`
+
+*Tool Categories*:
+- File I/O: read_file, write_file, list_files
+- Filesystem: create_directory, copy_file, move_file, delete_path, path_exists
+- Editing: str_replace, insert_lines
+- Search: grep_search (regex-based)
+- Shell: shell (command execution with timeout)
+- Planning: submit_plan (Planner-exclusive)
+- External: web_search (Brave API)
+
+== B. Experimental Setup
+
+*Test Case*: arXiv CS Daily web application
+
+*Original Prompt*:
+#quote(block: true)[
+Build an "arXiv CS Daily" webpage with three core functionalities to deliver a streamlined experience for tracking daily computer science preprints:
+
+Domain-Specific Navigation System
+Implement categorized navigation based on arXiv's primary CS fields (cs.AI, cs.TH, cs.SY, etc.).
+This enables users to quickly filter and switch between major subfields, ensuring easy access to their areas of interest.
+
+Daily Updated Paper List
+Create a daily updated list displaying the latest papers with essential details only.
+Each entry may include the paper title (hyperlinked to its detail page), submission time, and the specific arXiv field tag (e.g., [cs.CV]).
+
+Dedicated Paper Detail Page
+Design a comprehensive detail page that centralizes critical resources: direct PDF link (hosted on arXiv), core metadata (title, authors with affiliations, submission date), and citation generation tools supporting common formats (BibTeX, standard academic citation) with one-click copy functionality.
+]
+
+*Functional Requirements*:
+- 20+ CS category navigation (AI, CV, NLP, AR, CC, etc.)
+- Daily paper list with metadata
+- Paper detail pages with PDF links
+- Citation generation (BibTeX, APA) with one-click copy
+
+*Technical Stack*:
+- Frontend: React 19.x
+- Routing: React Router DOM 7.x
+- Build: Vite 7.x
+- HTTP: Axios
+- API: arXiv Export API (XML)
+
+*Models Evaluated*:
+- Code Agent: Claude Sonnet 4.5, DeepSeek Chat v3, Qwen3 Coder Plus
+- Baseline: Claude Code (CLI), Gemini CLI
+
+== C. Configuration
+
+*Environment Variables*:
+
+*LLM Provider Configuration*:
+- `OPENAI_API_KEY`: LLM provider API key (required)
+- `OPENAI_BASE_URL`: Custom endpoint (optional, default: OpenAI)
+
+*Model Selection*:
+- `REASONING_MODEL`: Main model for Planner/Coder (default: gpt-4o)
+- `LIGHTWEIGHT_MODEL`: Routing model for Supervisor (default: gpt-4o-mini)
+
+*System & Tools*:
+- `BRAVE_API_KEY`: Web search API key
+- `MAX_ITERATIONS`: Feedback loop limit (default: 15)
+
+*Supported Models*:
+- OpenAI: gpt-4o, gpt-4o-mini
+- DeepSeek: deepseek-chat, deepseek-r1-0528
+- Qwen: qwen3-coder-plus, qwen3-235b-a22b
+- Custom: Any OpenAI-compatible endpoint
+
+== D. Quick Start
+
+```bash
+# Installation
+git clone https://github.com/IZUMI-Zu/code-agent
+cd code-agent
+uv sync
+
+# Configuration
+cat > .env << EOF
+OPENAI_API_KEY=your_key
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+REASONING_MODEL=qwen/qwen3-coder-plus
+LIGHTWEIGHT_MODEL=openai/gpt-4o-mini
+EOF
+
+# Execution
+uv run code-agent -w ~/project
+```

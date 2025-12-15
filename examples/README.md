@@ -35,7 +35,7 @@ The following system prompt was used across all implementations:
 | **Manual Fixes**      | 0                   | 0                               | 3                               |
 | **Issues Resolved**   | CORS (prompted)     | CORS (Node) + Tailwind          | CORS (prompted)                 |
 | **Backend Included**  | No                  | Yes (Node.js proxy)             | No                              |
-| **Total LOC**         | ~1200               | ~2300                           | ~1500                           |
+| **Total LOC**         | ~1528               | ~2396                           | ~1840                           |
 
 ### Baseline Tools (Industry Comparison)
 
@@ -49,7 +49,7 @@ The following system prompt was used across all implementations:
 | **Tool Calls**        | N/A                 | 35 (100% success)   |
 | **Issues Resolved**   | CORS (auto)         | CORS + API params   |
 | **Backend Included**  | Yes (Express)       | No                  |
-| **Total LOC**         | ~656                | ~420                |
+| **Total LOC**         | ~791                | ~704                |
 
 ## Common Features
 
@@ -295,16 +295,16 @@ Delivery Complete
 
 | Model                  | Total LOC | JSX/TSX | CSS  | Language   | React Version |
 | ---------------------- | --------- | ------- | ---- | ---------- | ------------- |
-| **Claude Sonnet 4.5**  | ~1200     | ~800    | ~400 | JavaScript | 19.x          |
-| **DeepSeek Chat v3**   | ~2300     | ~2100   | ~100 | TypeScript | 19.x          |
-| **Qwen3 Coder Plus**   | ~1500     | ~1000   | ~500 | JavaScript | 19.x          |
+| **Claude Sonnet 4.5**  | ~1528     | ~441    | ~794 | JavaScript | 19.x          |
+| **DeepSeek Chat v3**   | ~2396     | ~1758   | ~50  | TypeScript | 19.x          |
+| **Qwen3 Coder Plus**   | ~1840     | ~529    | ~1026| JavaScript | 19.x          |
 
 **Baseline Tools**:
 
 | Tool              | Total LOC | JSX/TSX | CSS | Language   | React Version |
 | ----------------- | --------- | ------- | --- | ---------- | ------------- |
-| **Claude Code**   | ~656      | ~600    | ~56 | TypeScript | 18.x          |
-| **Gemini CLI**    | ~420      | ~380    | ~40 | TypeScript | 19.2 (latest) |
+| **Claude Code**   | ~791      | ~311    | ~304| TypeScript | 18.x          |
+| **Gemini CLI**    | ~704      | ~237    | ~312| TypeScript | 19.2 (latest) |
 
 **Key Observations**:
 
