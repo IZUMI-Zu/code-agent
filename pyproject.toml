@@ -2,7 +2,7 @@
 
 [project]
 name = "code-agent"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A TUI-based code agent powered by LangGraph and OpenAI"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -23,13 +23,17 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "ruff>=0.14.9",
-]
+dev = ["ruff>=0.14.9"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "code_agent/_version.py"
 
 [project.scripts]
 code-agent = "code_agent.__main__:main"
@@ -45,20 +49,20 @@ target-version = "py313"
 [tool.ruff.lint]
 select = [
     # Core rules
-    "E",     # pycodestyle (error)
-    "W",     # pycodestyle (warning) - Recommended
-    "F",     # pyflakes
-    "B",     # bugbear
-    "B9",    # bugbear extra rules
-    "C4",    # flake8-comprehensions
-    "SIM",   # flake8-simplify
-    "I",     # isort
-    "UP",    # pyupgrade
-    "PIE",   # flake8-pie
-    "PGH",   # pygrep-hooks
-    "PYI",   # flake8-pyi
-    "RUF",   # Ruff specific rules
-    
+    "E",   # pycodestyle (error)
+    "W",   # pycodestyle (warning) - Recommended
+    "F",   # pyflakes
+    "B",   # bugbear
+    "B9",  # bugbear extra rules
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "I",   # isort
+    "UP",  # pyupgrade
+    "PIE", # flake8-pie
+    "PGH", # pygrep-hooks
+    "PYI", # flake8-pyi
+    "RUF", # Ruff specific rules
+
     # Extra rule groups
     "ISC",   # Implicit string concatenation check
     "TC",    # TYPE_CHECKING block related
@@ -66,7 +70,7 @@ select = [
     "LOG",   # logging related rules
     "ASYNC", # async/await related rules
     "G",     # flake8-logging-format - logging format check
-    
+
     # Selected Pylint rules
     "PLW0120", # else clause on loop without break
     "PLW0127", # Variable self-assignment
@@ -74,45 +78,45 @@ select = [
     "PLW0602", # Use global but not assigned
     "PLW0604", # Module level global is redundant
     "PLW2901", # Loop variable overwritten by inner scope
-    
+
     # Return statement optimization
     "RET505", # Unnecessary elif after return
     "RET506", # Unnecessary elif after raise
     "RET507", # Unnecessary elif after continue
     "RET508", # Unnecessary elif after break
-    
+
     # Exception handling
     "TRY002", # Ban generalized Exception
 ]
 
 ignore = [
     # Formatting related
-    "E501",   # Line length
-    "W191",   # Indentation contains tabs
-    "E111",   # Indentation is not a multiple of 4
-    "E114",   # Comment indentation
-    "E117",   # Over-indentation
-    
+    "E501", # Line length
+    "W191", # Indentation contains tabs
+    "E111", # Indentation is not a multiple of 4
+    "E114", # Comment indentation
+    "E117", # Over-indentation
+
     # Functionality related
-    "B008",   # Function call in function argument
-    "B011",   # Use of assert False
-    "C901",   # Function complexity
-    "E731",   # lambda assignment
+    "B008", # Function call in function argument
+    "B011", # Use of assert False
+    "C901", # Function complexity
+    "E731", # lambda assignment
 
     # TYPE_CHECKING related
-    "TC003",  # Standard library import not moved to TYPE_CHECKING
+    "TC003", # Standard library import not moved to TYPE_CHECKING
 
     "ASYNC110",
 
     # Simplification suggestions
-    "SIM105",   # Use contextlib.suppress
-    "SIM108",   # Ternary expression simplification
+    "SIM105", # Use contextlib.suppress
+    "SIM108", # Ternary expression simplification
     "G004",
 ]
 
 unfixable = [
-    "F401",   # Unused imports
-    "F841",   # Unused variables
+    "F401", # Unused imports
+    "F841", # Unused variables
 ]
 
 [tool.ruff.format]
@@ -123,9 +127,9 @@ line-ending = "auto"
 docstring-code-format = true
 
 [tool.ruff.lint.isort]
-combine-as-imports = true           # Combine imports from the same module
-force-wrap-aliases = true           # Force wrap long aliases
-split-on-trailing-comma = true      # Split on trailing comma
+combine-as-imports = true      # Combine imports from the same module
+force-wrap-aliases = true      # Force wrap long aliases
+split-on-trailing-comma = true # Split on trailing comma
 
 [tool.ruff.lint.pylint]
 max-args = 10
