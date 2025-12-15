@@ -50,3 +50,5 @@ GEMINI.md
 node_modules/
 
 *.pdf
+
+code_agent/_version.py
