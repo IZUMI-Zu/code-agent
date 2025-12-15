@@ -24,7 +24,8 @@ class PatternManager:
             "deny": [],
             "ask": [],
         }
-        self.pattern_file = settings.workspace_root / settings.allowed_patterns_file
+        # Use the new state directory (outside workspace to avoid pollution)
+        self.pattern_file = settings.allowed_patterns_file
         self._load_patterns()
 
     def _load_patterns(self):
@@ -47,10 +48,7 @@ class PatternManager:
     def _save_patterns(self):
         """Save patterns to file."""
         try:
-            # Ensure workspace exists
-            settings.workspace_root.mkdir(parents=True, exist_ok=True)
-
-            # Ensure parent directory of pattern file exists (e.g., .code_agent/)
+            # Ensure state directory exists (handled by state_dir property)
             self.pattern_file.parent.mkdir(parents=True, exist_ok=True)
 
             data = {"permissions": self.patterns}

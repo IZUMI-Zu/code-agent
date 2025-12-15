@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from typing import Self
 
@@ -22,7 +23,34 @@ class Settings(BaseSettings):
 
     # Workspace Configuration
     workspace_root: Path = Path()
-    allowed_patterns_file: str = ".code_agent/allowed_patterns.json"
+
+    @property
+    def state_dir(self) -> Path:
+        """
+        Get the state directory for this workspace.
+
+        Design: Separate agent state from user workspace
+        - State dir: ~/.code_agent/{workspace_hash}/
+        - This prevents `.code_agent/` from polluting the workspace
+        - Each workspace gets a unique state dir based on path hash
+        """
+        # Use home directory as base (cross-platform)
+        base = Path.home() / ".code_agent"
+
+        # Create workspace-specific subdirectory using path hash
+        # This allows multiple projects to have separate permission files
+        workspace_hash = hashlib.sha256(str(self.workspace_root.resolve()).encode()).hexdigest()[
+            :12
+        ]  # First 12 chars is enough
+
+        state_path = base / workspace_hash
+        state_path.mkdir(parents=True, exist_ok=True)
+        return state_path
+
+    @property
+    def allowed_patterns_file(self) -> Path:
+        """Get the full path to the allowed patterns file"""
+        return self.state_dir / "allowed_patterns.json"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

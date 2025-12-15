@@ -154,9 +154,7 @@ class ListFilesTool(BaseTool):
         items = []
 
         # By default, filter out common noise directories/files
-        ignore_names = {
-            ".code_agent",  # Internal agent config
-        }
+        ignore_names: set[str] = set()
 
         def scan(p: Path, depth: int = 0):
             if len(items) >= limit:
